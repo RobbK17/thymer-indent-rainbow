@@ -147,7 +147,7 @@ class Plugin extends AppPlugin {
         let currentOpacity = parseFloat(localStorage.getItem(OPACITY_KEY)) || 0.3;
         let isEnabled = localStorage.getItem(ENABLED_KEY) !== 'false'; // default true
         let isThreadingEnabled = localStorage.getItem(THREADING_ENABLED_KEY) !== 'false'; // default true
-        let threadingMode = localStorage.getItem(THREADING_MODE_KEY) || 'staircase'; // 'staircase' or 'straight'
+        let threadingMode = localStorage.getItem(THREADING_MODE_KEY) || 'staircase'; // 'staircase' or 'stretched'
 
         // Opacity presets
         const opacityPresets = {
@@ -472,7 +472,7 @@ class Plugin extends AppPlugin {
             const highlightsToInsert = [];
 
             parents.forEach((p, index) => {
-                // Staircase targets immediate child; straight targets the completely deepest active node
+                // Staircase targets immediate child; stretched targets the completely deepest active node
                 const targetNode = threadingMode === 'staircase'
                     ? (index === 0 ? node : parents[index - 1])
                     : node;
@@ -661,10 +661,10 @@ class Plugin extends AppPlugin {
 
         // Threading Styles
         this.ui.addCommandPaletteCommand({
-            label: 'Indent Rainbow: Toggle Threading Style (Staircase/Straight)',
+            label: 'Indent Rainbow: Toggle Threading Style (Staircase/Stretched)',
             icon: 'ti-layout-list',
             onSelected: () => {
-                threadingMode = threadingMode === 'staircase' ? 'straight' : 'staircase';
+                threadingMode = threadingMode === 'staircase' ? 'stretched' : 'staircase';
                 applySettings();
                 this.ui.showToaster({
                     message: `Threading style set to: ${threadingMode}`,

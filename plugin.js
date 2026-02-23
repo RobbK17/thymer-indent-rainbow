@@ -14,6 +14,9 @@
 
 class Plugin extends AppPlugin {
     onLoad() {
+        // Keep track of resources to clean up later
+        this.cleanupMethods = [];
+
         // Storage keys for persisting settings
         const STORAGE_KEY = 'indent-rainbow-scheme';
         const WIDTH_KEY = 'indent-rainbow-width';
@@ -453,66 +456,83 @@ class Plugin extends AppPlugin {
                 currentFocusedItem = node;
             }
 
-            // Always clear and redraw highlights on any layout/transform change
+            // Clean up old highlights
             document.querySelectorAll('.bt-active-highlight').forEach(el => el.remove());
 
-            if (node && isThreadingEnabled) {
-                const parents = getParents(node);
+            if (!node || !isThreadingEnabled) return;
 
-                parents.forEach((p, index) => {
-                    // Staircase targets immediate child; straight targets the completely deepest active node
-                    const targetNode = threadingMode === 'staircase'
-                        ? (index === 0 ? node : parents[index - 1])
-                        : node;
+            const parents = getParents(node);
+            if (!parents || parents.length === 0) return;
 
-                    const targetLineDiv = targetNode.querySelector('.line-div, .line-check-div') || targetNode;
-                    const targetRect = targetLineDiv.getBoundingClientRect();
-                    const targetY = targetRect.top + (targetRect.height / 2); // target middle of the bullet
+            // Optional: check if node is detached from DOM or hidden
+            if (!document.body.contains(node) || node.offsetParent === null) return;
 
-                    const parentLine = p.querySelector('.line-div') || p.querySelector('.line-check-div');
-                    const parentIndent = parentLine ? parentLine.querySelector('.listitem-indentline') : null;
+            // To avoid reflows in the loop, we could batch reads and writes, 
+            // but for a single branch path it's usually < 10 items, so inline is fine.
+            const highlightsToInsert = [];
 
-                    if (parentLine && parentIndent && parentIndent.parentElement) {
-                        const parentRect = parentIndent.getBoundingClientRect();
-                        const parentLineContainerRect = parentIndent.parentElement.getBoundingClientRect();
+            parents.forEach((p, index) => {
+                // Staircase targets immediate child; straight targets the completely deepest active node
+                const targetNode = threadingMode === 'staircase'
+                    ? (index === 0 ? node : parents[index - 1])
+                    : node;
 
-                        // Height from top of parent's line to middle of the target item's line
-                        const height = targetY - parentRect.top;
+                const targetLineDiv = targetNode.querySelector('.line-div, .line-check-div') || targetNode;
+                const targetRect = targetLineDiv.getBoundingClientRect();
 
-                        // Width from the parent line to the target line vertically
-                        const width = Math.max(14, targetRect.left - parentRect.left - 10);
+                // If element has no height (hidden/collapsed display mode), ignore
+                if (targetRect.height === 0) return;
 
-                        if (height > 0) {
-                            const highlight = document.createElement('div');
-                            highlight.className = 'bt-active-highlight';
+                const targetY = targetRect.top + (targetRect.height / 2); // target middle of the bullet
 
-                            const style = getComputedStyle(parentIndent);
-                            const color = style.backgroundColor;
+                const parentLine = p.querySelector('.line-div') || p.querySelector('.line-check-div');
+                const parentIndent = parentLine ? parentLine.querySelector('.listitem-indentline') : null;
 
-                            highlight.style.position = 'absolute';
-                            highlight.style.top = (parentRect.top - parentLineContainerRect.top) + 'px';
-                            highlight.style.left = (parentRect.left - parentLineContainerRect.left) + 'px';
-                            highlight.style.width = width + 'px'; // Width of the horizontal "elbow"
-                            highlight.style.height = height + 'px';
+                if (parentLine && parentIndent && parentIndent.parentElement) {
+                    const parentRect = parentIndent.getBoundingClientRect();
+                    const parentLineContainerRect = parentIndent.parentElement.getBoundingClientRect();
 
-                            highlight.style.borderLeft = `${activeWidth}px solid ${color}`;
-                            highlight.style.borderBottom = `${activeWidth}px solid ${color}`;
-                            highlight.style.borderBottomLeftRadius = '6px';
-                            highlight.style.boxSizing = 'border-box';
-                            highlight.style.backgroundColor = 'transparent';
+                    // Height from top of parent's line to middle of the target item's line
+                    const height = targetY - parentRect.top;
 
-                            highlight.style.zIndex = '10';
-                            highlight.style.pointerEvents = 'none';
+                    // Width from the parent line to the target line vertically
+                    const width = Math.max(14, targetRect.left - parentRect.left - 10);
 
-                            // Brightness and shadow exactly like focused line glow
-                            highlight.style.opacity = '1';
-                            highlight.style.filter = `brightness(1.5) drop-shadow(0 0 3px ${color})`;
+                    // Only draw if we have a positive height (it's physically below the parent)
+                    // and parent is actually visible
+                    if (height > 0 && parentRect.height > 0) {
+                        const highlight = document.createElement('div');
+                        highlight.className = 'bt-active-highlight';
 
-                            parentIndent.parentElement.appendChild(highlight);
-                        }
+                        const style = getComputedStyle(parentIndent);
+                        const color = style.backgroundColor;
+
+                        highlight.style.position = 'absolute';
+                        highlight.style.top = (parentRect.top - parentLineContainerRect.top) + 'px';
+                        highlight.style.left = (parentRect.left - parentLineContainerRect.left) + 'px';
+                        highlight.style.width = width + 'px'; // Width of the horizontal "elbow"
+                        highlight.style.height = height + 'px';
+
+                        highlight.style.borderLeft = `${activeWidth}px solid ${color}`;
+                        highlight.style.borderBottom = `${activeWidth}px solid ${color}`;
+                        highlight.style.borderBottomLeftRadius = '6px';
+                        highlight.style.boxSizing = 'border-box';
+                        highlight.style.backgroundColor = 'transparent';
+
+                        highlight.style.zIndex = '10';
+                        highlight.style.pointerEvents = 'none';
+
+                        highlight.style.opacity = '1';
+                        highlight.style.willChange = 'opacity, filter'; // Hint browser
+                        highlight.style.filter = `brightness(1.5) drop-shadow(0 0 3px ${color})`;
+
+                        highlightsToInsert.push({ parent: parentIndent.parentElement, el: highlight });
                     }
-                });
-            }
+                }
+            });
+
+            // Batch writes to avoid layout thrashing
+            highlightsToInsert.forEach(h => h.parent.appendChild(h.el));
         };
 
         const scheduleUpdate = () => {
@@ -547,6 +567,8 @@ class Plugin extends AppPlugin {
                 attributeFilter: ['style']
             });
 
+            this.cleanupMethods.push(() => observer.disconnect());
+
             // Initial update
             scheduleUpdate();
         };
@@ -555,19 +577,23 @@ class Plugin extends AppPlugin {
         setupObserver();
 
         // Also listen for keyboard events as backup (O(1) Set lookup)
-        document.addEventListener('keyup', (e) => {
+        const keyHandler = (e) => {
             if (NAV_KEYS.has(e.key)) {
                 scheduleUpdate();
             }
-        });
+        };
+        document.addEventListener('keyup', keyHandler);
+        this.cleanupMethods.push(() => document.removeEventListener('keyup', keyHandler));
 
-        // Listen for clicks in editor area only (avoid processing unrelated clicks)
+        // Listen for clicks in editor area only, fallback to document
+        const clickHandler = () => scheduleUpdate();
         const editorContainer = document.querySelector('.editor-wrapper, .page-content, #editor');
         if (editorContainer) {
-            editorContainer.addEventListener('click', scheduleUpdate);
+            editorContainer.addEventListener('click', clickHandler);
+            this.cleanupMethods.push(() => editorContainer.removeEventListener('click', clickHandler));
         } else {
-            // Fallback to document if editor container not found
-            document.addEventListener('click', scheduleUpdate);
+            document.addEventListener('click', clickHandler);
+            this.cleanupMethods.push(() => document.removeEventListener('click', clickHandler));
         }
 
         // Add command palette commands for each color scheme
@@ -703,5 +729,36 @@ class Plugin extends AppPlugin {
                 });
             }
         });
+
+        this.cleanupMethods.push(() => {
+            statusBarItem.remove(); // if Thymer SDK supports it, clean up status bar
+        });
+    }
+
+    onUnload() {
+        // Remove globally bound event listeners and unobserve mutation observers
+        if (this.cleanupMethods) {
+            this.cleanupMethods.forEach(cleanupFn => {
+                try {
+                    cleanupFn();
+                } catch (e) {
+                    console.warn('Failed to clean up plugin resource:', e);
+                }
+            });
+            this.cleanupMethods = [];
+        }
+
+        // Manually destroy appended UI artifacts
+        const existingHighlights = document.querySelectorAll('.bt-active-highlight');
+        existingHighlights.forEach(el => el.remove());
+
+        const focused = document.querySelectorAll('.bt-focused');
+        focused.forEach(el => el.classList.remove('bt-focused'));
+
+        // Delete style element injected into <head>
+        const styleElement = document.querySelector('style[data-source="thymer-indent-rainbow"]');
+        if (styleElement) {
+            styleElement.remove();
+        }
     }
 }

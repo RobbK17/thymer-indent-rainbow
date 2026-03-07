@@ -181,7 +181,7 @@ class Plugin extends AppPlugin {
 .listitem-indentline {
     --line-height: 26px;
     --checkbox-size: 23.5px;
-    --bullet-size: 8px;
+    --bullet-size: 10px;
 }
 
 /* Base styling for indent lines - lighter by default */
@@ -658,16 +658,15 @@ class Plugin extends AppPlugin {
         const applyListColors = () => {
             if (!isEnabled) return;
             const colors = colorSchemes[currentScheme].colors;
-            const items = document.querySelectorAll('.listitem-ulist, .listitem-olist');
+            const items = document.querySelectorAll('.listitem-ulist, .listitem-olist, .listitem-task');
             for (const item of items) {
-                // Find the first child with margin-left (the prefix: bullet/number marker)
+                // Determine indentation via prefix margin-left
                 let marginLeft = 0;
-                let prefixEl = null;
                 for (let i = 0; i < item.children.length; i++) {
                     const child = item.children[i];
                     if (child.style && child.style.marginLeft) {
                         const ml = parseInt(child.style.marginLeft) || 0;
-                        if (ml > 0) { marginLeft = ml; prefixEl = child; break; }
+                        if (ml > 0) { marginLeft = ml; break; }
                     }
                 }
                 if (marginLeft === 0 && item.style && item.style.marginLeft) {
@@ -677,26 +676,40 @@ class Plugin extends AppPlugin {
                 const indentLine = item.querySelector('.listitem-indentline');
                 if (!indentLine) continue;
 
-                if (marginLeft > 0) {
-                    const level = Math.floor(marginLeft / 30);
-                    const color = colors[level % colors.length];
-                    indentLine.style.setProperty('background-color', color, 'important');
-                    indentLine.style.setProperty('border-color', color, 'important');
-                    indentLine.dataset.btManaged = '1';
-                } else if (indentLine.dataset.btManaged) {
-                    indentLine.style.removeProperty('background-color');
-                    indentLine.style.removeProperty('border-color');
-                    delete indentLine.dataset.btManaged;
+                // Hide indent line if the content area has no text, ignoring the indent line itself
+                const lineDiv = item.querySelector('.line-div');
+                const contentText = lineDiv
+                    ? Array.from(lineDiv.childNodes)
+                        .filter(n => !(n.nodeType === 1 && n.classList?.contains('listitem-indentline')))
+                        .map(n => n.textContent || '')
+                        .join('')
+                        .trim()
+                    : (item.textContent || '').trim();
+                if (contentText.length === 0) {
+                    indentLine.style.setProperty('display', 'none', 'important');
+                    indentLine.dataset.btEmpty = '1';
+                } else if (indentLine.dataset.btEmpty) {
+                    indentLine.style.removeProperty('display');
+                    delete indentLine.dataset.btEmpty;
                 }
+
+                // Always color, including level 0, so top-level bullets/tasks get a line
+                const level = Math.max(0, Math.floor(marginLeft / 30));
+                const color = colors[level % colors.length];
+                indentLine.style.setProperty('background-color', color, 'important');
+                indentLine.style.setProperty('border-color', color, 'important');
+                indentLine.dataset.btManaged = '1';
             }
         };
 
         const clearListColors = () => {
-            const lines = document.querySelectorAll('.listitem-indentline[data-bt-managed]');
+            const lines = document.querySelectorAll('.listitem-indentline[data-bt-managed], .listitem-indentline[data-bt-empty]');
             for (const line of lines) {
                 line.style.removeProperty('background-color');
                 line.style.removeProperty('border-color');
+                line.style.removeProperty('display');
                 delete line.dataset.btManaged;
+                delete line.dataset.btEmpty;
             }
         };
 

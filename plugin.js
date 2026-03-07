@@ -658,21 +658,8 @@ class Plugin extends AppPlugin {
         const applyListColors = () => {
             if (!isEnabled) return;
             const colors = colorSchemes[currentScheme].colors;
-            const items = document.querySelectorAll('.listitem-ulist, .listitem-olist, .listitem-task');
+            const items = document.querySelectorAll('.listitem');
             for (const item of items) {
-                // Determine indentation via prefix margin-left
-                let marginLeft = 0;
-                for (let i = 0; i < item.children.length; i++) {
-                    const child = item.children[i];
-                    if (child.style && child.style.marginLeft) {
-                        const ml = parseInt(child.style.marginLeft) || 0;
-                        if (ml > 0) { marginLeft = ml; break; }
-                    }
-                }
-                if (marginLeft === 0 && item.style && item.style.marginLeft) {
-                    marginLeft = parseInt(item.style.marginLeft) || 0;
-                }
-
                 const indentLine = item.querySelector('.listitem-indentline');
                 if (!indentLine) continue;
 
@@ -680,11 +667,13 @@ class Plugin extends AppPlugin {
                 const lineDiv = item.querySelector('.line-div');
                 const contentText = lineDiv
                     ? Array.from(lineDiv.childNodes)
-                        .filter(n => !(n.nodeType === 1 && n.classList?.contains('listitem-indentline')))
+                        .filter(n => !(n.nodeType === 1 && (n.classList?.contains('listitem-indentline') || n.classList?.contains('bt-active-highlight'))))
                         .map(n => n.textContent || '')
                         .join('')
                         .trim()
                     : (item.textContent || '').trim();
+
+                // Treat as empty if no text content
                 if (contentText.length === 0) {
                     indentLine.style.setProperty('display', 'none', 'important');
                     indentLine.dataset.btEmpty = '1';
@@ -693,12 +682,27 @@ class Plugin extends AppPlugin {
                     delete indentLine.dataset.btEmpty;
                 }
 
-                // Always color, including level 0, so top-level bullets/tasks get a line
-                const level = Math.max(0, Math.floor(marginLeft / 30));
-                const color = colors[level % colors.length];
-                indentLine.style.setProperty('background-color', color, 'important');
-                indentLine.style.setProperty('border-color', color, 'important');
-                indentLine.dataset.btManaged = '1';
+                // JS-driven coloring is only needed for lists/tasks where margin is on the prefix
+                if (item.classList.contains('listitem-ulist') || item.classList.contains('listitem-olist') || item.classList.contains('listitem-task')) {
+                    let marginLeft = 0;
+                    for (let i = 0; i < item.children.length; i++) {
+                        const child = item.children[i];
+                        if (child.style && child.style.marginLeft) {
+                            const ml = parseInt(child.style.marginLeft) || 0;
+                            if (ml > 0) { marginLeft = ml; break; }
+                        }
+                    }
+                    if (marginLeft === 0 && item.style && item.style.marginLeft) {
+                        marginLeft = parseInt(item.style.marginLeft) || 0;
+                    }
+
+                    // Always color, including level 0, so top-level bullets/tasks get a line
+                    const level = Math.max(0, Math.floor(marginLeft / 30));
+                    const color = colors[level % colors.length];
+                    indentLine.style.setProperty('background-color', color, 'important');
+                    indentLine.style.setProperty('border-color', color, 'important');
+                    indentLine.dataset.btManaged = '1';
+                }
             }
         };
 

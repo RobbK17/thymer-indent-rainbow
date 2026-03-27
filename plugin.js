@@ -897,68 +897,97 @@ class Plugin extends AppPlugin {
                 --ir-bg: var(--theme-background-secondary, var(--color-bg-700, #1e1e2e));
                 --ir-border: var(--theme-border, var(--color-bg-500, #333));
                 --ir-input-bg: var(--input-bg-color, var(--theme-background-primary, var(--color-bg-800, #111)));
+                --ir-panel-bg: var(--theme-background-primary, var(--color-bg-800, #111));
+                --ir-panel-border: color-mix(in srgb, var(--ir-border) 78%, transparent);
+                --ir-soft-bg: color-mix(in srgb, var(--ir-bg) 82%, var(--ir-panel-bg));
                 
-                padding: 32px; 
-                max-width: 650px; 
+                padding: 24px 24px 40px; 
+                max-width: 760px; 
                 margin: 0 auto; 
                 font-family: var(--font-m, var(--font-primary, inherit)); 
                 color: var(--ir-text);
                 line-height: 1.5;
             }
             .ir-header { 
-                margin-bottom: 32px; 
-                border-bottom: 1px solid var(--ir-border); 
-                padding-bottom: 16px; 
+                margin-bottom: 20px; 
+                padding-bottom: 8px; 
             }
             .ir-title { 
                 margin: 0; 
                 display: flex; 
                 align-items: center; 
-                gap: 12px; 
-                font-size: 1.75em; 
-                font-weight: 700; 
-                color: var(--ir-accent); 
+                gap: 10px; 
+                font-size: 1.35em; 
+                font-weight: 650; 
+                color: var(--ir-text); 
+            }
+            .ir-title svg,
+            .ir-card h3 svg {
+                color: var(--ir-accent);
+            }
+            .ir-header-copy {
+                margin: 10px 0 0;
+                max-width: 560px;
+                font-size: 0.95em;
+                color: var(--ir-text-secondary);
             }
             .ir-card { 
-                padding: 24px; 
-                border-radius: 12px; 
-                border: 1px solid var(--ir-border); 
-                background: var(--ir-bg); 
-                margin-bottom: 24px; 
-                box-shadow: var(--color-shadow-cards, 0 4px 6px rgba(0,0,0,0.1)); 
+                padding: 18px 18px 8px; 
+                border-radius: 14px; 
+                border: 1px solid var(--ir-panel-border); 
+                background: var(--ir-soft-bg); 
+                margin-bottom: 16px; 
+                box-shadow: none; 
             }
             .ir-card h3 { 
                 margin-top: 0; 
-                margin-bottom: 20px; 
+                margin-bottom: 6px; 
                 display: flex; 
                 align-items: center; 
-                gap: 10px; 
-                font-size: 1.2em; 
+                gap: 8px; 
+                font-size: 1em; 
                 font-weight: 600; 
                 color: var(--ir-text); 
             }
+            .ir-card-copy {
+                margin: 0 0 16px;
+                font-size: 0.9em;
+                color: var(--ir-text-secondary);
+            }
             .ir-row { 
                 display: flex; 
-                align-items: center; 
+                align-items: flex-start; 
                 gap: 16px;
                 justify-content: space-between; 
-                margin-bottom: 20px; 
+                margin-bottom: 16px; 
             }
             .ir-row:last-child { margin-bottom: 0; }
             .ir-label-group { display: flex; flex-direction: column; gap: 6px; flex: 1; }
             .ir-label-group strong { font-weight: 600; color: var(--ir-text); }
-            .ir-subtitle { font-size: 0.9em; color: var(--ir-text-secondary); opacity: 0.8; }
+            .ir-subtitle { font-size: 0.9em; color: var(--ir-text-secondary); opacity: 0.9; }
+            .ir-control {
+                width: min(280px, 44%);
+                flex-shrink: 0;
+            }
+            .ir-slider-control {
+                width: min(320px, 48%);
+                flex-shrink: 0;
+            }
             .ir-input { 
                 width: 100%; 
-                padding: 10px 14px; 
-                border-radius: 8px; 
-                border: 1px solid var(--ir-border); 
+                min-height: 38px;
+                padding: 8px 12px; 
+                border-radius: 10px; 
+                border: 1px solid var(--ir-panel-border); 
                 background: var(--ir-input-bg); 
                 color: var(--ir-text); 
                 font-family: inherit; 
                 font-size: 0.95em;
-                transition: border-color 0.2s, box-shadow 0.2s; 
+                transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s; 
                 cursor: pointer;
+            }
+            .ir-input:hover {
+                background: color-mix(in srgb, var(--ir-input-bg) 92%, var(--ir-accent-subtle));
             }
             .ir-input:focus { 
                 outline: none; 
@@ -979,10 +1008,10 @@ class Plugin extends AppPlugin {
             .ir-range { 
                 width: 100%; 
                 cursor: pointer; 
-                margin-top: 12px; 
+                margin-top: 10px; 
                 height: 6px;
                 border-radius: 3px;
-                background: var(--ir-border) !important;
+                background: color-mix(in srgb, var(--ir-border) 70%, transparent) !important;
                 appearance: none;
                 -webkit-appearance: none;
                 outline: none;
@@ -1012,11 +1041,43 @@ class Plugin extends AppPlugin {
                 font-weight: 700; 
                 color: var(--ir-accent); 
                 background: var(--ir-accent-subtle);
-                padding: 2px 10px;
-                border-radius: 6px;
-                font-size: 0.9em;
-                min-width: 45px;
+                padding: 3px 10px;
+                border-radius: 999px;
+                font-size: 0.85em;
+                min-width: 52px;
                 text-align: center;
+            }
+            .ir-slider-meta {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+            }
+            .ir-swatch-row {
+                display: flex;
+                gap: 6px;
+                margin-top: 8px;
+                flex-wrap: wrap;
+            }
+            .ir-swatch {
+                width: 14px;
+                height: 14px;
+                border-radius: 999px;
+                border: 1px solid color-mix(in srgb, var(--ir-panel-bg) 55%, transparent);
+                box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+            }
+            @media (max-width: 720px) {
+                .ir-settings {
+                    padding: 18px 16px 32px;
+                }
+                .ir-row {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+                .ir-control,
+                .ir-slider-control {
+                    width: 100%;
+                }
             }
         `;
         element.appendChild(style);
@@ -1032,22 +1093,62 @@ class Plugin extends AppPlugin {
         title.appendChild(api.createIcon('paint'));
         title.appendChild(document.createTextNode(' Indent Rainbow Settings'));
         header.appendChild(title);
+        const headerCopy = document.createElement('p');
+        headerCopy.className = 'ir-header-copy';
+        headerCopy.textContent = 'Tune the guide colors and active thread styling to match how you like hierarchy to feel in Thymer.';
+        header.appendChild(headerCopy);
         container.appendChild(header);
+
+        const createField = (titleText, subtitleText, controlElement, extraElement = null, controlClassName = 'ir-control') => {
+            const row = document.createElement('div');
+            row.className = 'ir-row';
+            const label = document.createElement('div');
+            label.className = 'ir-label-group';
+            const strong = document.createElement('strong');
+            strong.textContent = titleText;
+            label.appendChild(strong);
+            if (subtitleText) {
+                const subtitle = document.createElement('div');
+                subtitle.className = 'ir-subtitle';
+                subtitle.textContent = subtitleText;
+                label.appendChild(subtitle);
+            }
+            if (extraElement) {
+                label.appendChild(extraElement);
+            }
+            const controlWrap = document.createElement('div');
+            controlWrap.className = controlClassName;
+            controlWrap.appendChild(controlElement);
+            row.appendChild(label);
+            row.appendChild(controlWrap);
+            return row;
+        };
+
+        const setSchemeSwatches = (schemeName, containerElement) => {
+            containerElement.innerHTML = '';
+            (api.colorSchemes[schemeName]?.colors || []).slice(0, 8).forEach((color) => {
+                const swatch = document.createElement('span');
+                swatch.className = 'ir-swatch';
+                swatch.style.backgroundColor = color;
+                containerElement.appendChild(swatch);
+            });
+        };
+
+        const formatWidthValue = (value) => value === 0 ? 'Hidden' : `${value}px`;
 
         // General Card
         const genCard = document.createElement('div');
         genCard.className = 'ir-card';
+        const genTitle = document.createElement('h3');
+        genTitle.appendChild(api.createIcon('paint'));
+        genTitle.appendChild(document.createTextNode(' Appearance'));
+        genCard.appendChild(genTitle);
+        const genCopy = document.createElement('p');
+        genCopy.className = 'ir-card-copy';
+        genCopy.textContent = 'Set the overall look of the guide rails shown throughout the editor.';
+        genCard.appendChild(genCopy);
 
         // Scheme Select
-        const schemeGroup = document.createElement('div');
-        schemeGroup.style.marginBottom = '16px';
-        const schemeLabel = document.createElement('div');
-        schemeLabel.className = 'ir-label-group';
-        schemeLabel.style.marginBottom = '8px';
-        const schemeStrong = document.createElement('strong');
-        schemeStrong.textContent = 'Color Scheme';
-        schemeLabel.appendChild(schemeStrong);
-        schemeGroup.appendChild(schemeLabel);
         const schemeSelect = document.createElement('select');
         schemeSelect.className = 'ir-input cursor-pointer';
         Object.keys(api.colorSchemes).forEach(key => {
@@ -1057,20 +1158,16 @@ class Plugin extends AppPlugin {
             opt.selected = settings.currentScheme === key;
             schemeSelect.appendChild(opt);
         });
-        schemeSelect.addEventListener('change', (e) => api.updateSettings({ currentScheme: e.target.value }));
-        schemeGroup.appendChild(schemeSelect);
-        genCard.appendChild(schemeGroup);
+        const schemeSwatches = document.createElement('div');
+        schemeSwatches.className = 'ir-swatch-row';
+        setSchemeSwatches(settings.currentScheme, schemeSwatches);
+        schemeSelect.addEventListener('change', (e) => {
+            setSchemeSwatches(e.target.value, schemeSwatches);
+            api.updateSettings({ currentScheme: e.target.value });
+        });
+        genCard.appendChild(createField('Color Scheme', 'Choose the palette used for nested indent levels.', schemeSelect, schemeSwatches));
 
         // Opacity Select
-        const opacityGroup = document.createElement('div');
-        opacityGroup.style.marginBottom = '16px';
-        const opacityLabel = document.createElement('div');
-        opacityLabel.className = 'ir-label-group';
-        opacityLabel.style.marginBottom = '8px';
-        const opacityStrong = document.createElement('strong');
-        opacityStrong.textContent = 'Opacity';
-        opacityLabel.appendChild(opacityStrong);
-        opacityGroup.appendChild(opacityLabel);
         const opacitySelect = document.createElement('select');
         opacitySelect.className = 'ir-input cursor-pointer';
         Object.keys(api.opacityPresets).forEach(key => {
@@ -1081,20 +1178,19 @@ class Plugin extends AppPlugin {
             opacitySelect.appendChild(opt);
         });
         opacitySelect.addEventListener('change', (e) => api.updateSettings({ currentOpacity: e.target.value }));
-        opacityGroup.appendChild(opacitySelect);
-        genCard.appendChild(opacityGroup);
+        genCard.appendChild(createField('Opacity', 'Keep guides subtle or make them easier to pick out while scanning.', opacitySelect));
 
         // Line Width Slider
         const widthGroup = document.createElement('div');
         const widthRow = document.createElement('div');
-        widthRow.className = 'ir-row';
-        widthRow.style.marginBottom = '0';
-        const widthStrong = document.createElement('strong');
-        widthStrong.textContent = 'Line Width';
-        widthRow.appendChild(widthStrong);
+        widthRow.className = 'ir-slider-meta';
         const widthVal = document.createElement('span');
         widthVal.className = 'ir-val-text';
-        widthVal.textContent = settings.currentWidth + 'px';
+        widthVal.textContent = formatWidthValue(settings.currentWidth);
+        const widthHint = document.createElement('span');
+        widthHint.className = 'ir-subtitle';
+        widthHint.textContent = 'Thickness of the standard guide line';
+        widthRow.appendChild(widthHint);
         widthRow.appendChild(widthVal);
         widthGroup.appendChild(widthRow);
         const widthSlider = document.createElement('input');
@@ -1105,11 +1201,11 @@ class Plugin extends AppPlugin {
         widthSlider.step = '1';
         widthSlider.value = settings.currentWidth;
         widthSlider.addEventListener('input', (e) => {
-            widthVal.textContent = e.target.value + 'px';
+            widthVal.textContent = formatWidthValue(parseInt(e.target.value, 10));
             api.updateSettings({ currentWidth: e.target.value });
         });
         widthGroup.appendChild(widthSlider);
-        genCard.appendChild(widthGroup);
+        genCard.appendChild(createField('Line Width', 'Adjust the default indent guide weight used across the page.', widthGroup, null, 'ir-slider-control'));
 
         container.appendChild(genCard);
 
@@ -1120,17 +1216,12 @@ class Plugin extends AppPlugin {
         threadTitle.appendChild(api.createIcon('target'));
         threadTitle.appendChild(document.createTextNode(' Active Threading'));
         threadCard.appendChild(threadTitle);
+        const threadCopy = document.createElement('p');
+        threadCopy.className = 'ir-card-copy';
+        threadCopy.textContent = 'Control how the currently focused path is emphasized while you navigate through nested content.';
+        threadCard.appendChild(threadCopy);
 
         // Threading Style Select
-        const threadStyleGroup = document.createElement('div');
-        threadStyleGroup.style.marginBottom = '16px';
-        const threadStyleLabel = document.createElement('div');
-        threadStyleLabel.className = 'ir-label-group';
-        threadStyleLabel.style.marginBottom = '8px';
-        const threadStyleStrong = document.createElement('strong');
-        threadStyleStrong.textContent = 'Threading Style';
-        threadStyleLabel.appendChild(threadStyleStrong);
-        threadStyleGroup.appendChild(threadStyleLabel);
         const threadStyleSelect = document.createElement('select');
         threadStyleSelect.className = 'ir-input cursor-pointer';
         const optStaircase = document.createElement('option');
@@ -1144,20 +1235,19 @@ class Plugin extends AppPlugin {
         optStretched.selected = settings.threadingMode === 'stretched';
         threadStyleSelect.appendChild(optStretched);
         threadStyleSelect.addEventListener('change', (e) => api.updateSettings({ threadingMode: e.target.value }));
-        threadStyleGroup.appendChild(threadStyleSelect);
-        threadCard.appendChild(threadStyleGroup);
+        threadCard.appendChild(createField('Threading Style', 'Choose whether the active path steps through each level or stretches directly to the current line.', threadStyleSelect));
 
         // Active Thread Width Slider
         const aWidthGroup = document.createElement('div');
         const aWidthRow = document.createElement('div');
-        aWidthRow.className = 'ir-row';
-        aWidthRow.style.marginBottom = '0';
-        const aWidthStrong = document.createElement('strong');
-        aWidthStrong.textContent = 'Active Thread Width';
-        aWidthRow.appendChild(aWidthStrong);
+        aWidthRow.className = 'ir-slider-meta';
         const aWidthVal = document.createElement('span');
         aWidthVal.className = 'ir-val-text';
         aWidthVal.textContent = settings.activeWidth + 'px';
+        const aWidthHint = document.createElement('span');
+        aWidthHint.className = 'ir-subtitle';
+        aWidthHint.textContent = 'Thickness of the focused thread highlight';
+        aWidthRow.appendChild(aWidthHint);
         aWidthRow.appendChild(aWidthVal);
         aWidthGroup.appendChild(aWidthRow);
         const aWidthSlider = document.createElement('input');
@@ -1172,7 +1262,7 @@ class Plugin extends AppPlugin {
             api.updateSettings({ activeWidth: e.target.value });
         });
         aWidthGroup.appendChild(aWidthSlider);
-        threadCard.appendChild(aWidthGroup);
+        threadCard.appendChild(createField('Active Thread Width', 'Set how strongly the currently focused hierarchy path stands out.', aWidthGroup, null, 'ir-slider-control'));
 
         container.appendChild(threadCard);
         element.appendChild(container);

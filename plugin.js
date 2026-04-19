@@ -292,21 +292,16 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
         applyEnabledState();
 
         // =====================================================
-        // Focus Tracking (Virtual Input Position Tracking)
+        // Focus Tracking via .listitem-with-caret
         // =====================================================
-        // Thymer uses a virtual input system where the browser's Selection API
-        // always points to #editor-meta, not the actual list items.
-        // We track focus by watching the virtualinput-wrapper's transform
-        // position and using elementFromPoint to find the focused line.
+        // Thymer marks the listitem containing the caret with the class
+        // `listitem-with-caret`. We watch for that class toggle to resolve
+        // the focused item — no transform parsing, no hit-tests, no key
+        // or click listeners.
 
         let currentFocusedItem = null;
         let rafPending = false;
-        let virtualInputWrapper = null;
-        let lastTransform = '';  // Cache to skip redundant updates
         let activeHighlights = []; // Cache highlight elements for faster cleanup
-
-        // O(1) lookup for navigation keys
-        const NAV_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Backspace', 'Tab']);
 
         const cleanHighlights = () => {
             while (activeHighlights.length > 0) {
@@ -369,45 +364,15 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
         };
 
         // =====================================================
-        // Focus tracking — resolves focused listitem from cursor pos
+        // Focus tracking — resolves focused listitem from class marker
         // =====================================================
 
-        const updateFocusedItem = () => {
+        const updateFocusedItem = (node) => {
             if (this.isUnloaded) return;
             rafPending = false;
 
-            // Find the virtual input wrapper if not cached
-            if (!virtualInputWrapper) {
-                virtualInputWrapper = document.getElementById('virtualinput-wrapper');
-            }
-            if (!virtualInputWrapper) return;
-
-            // Parse the transform to get cursor position
-            const style = virtualInputWrapper.style.transform;
-
-            // Skip if transform hasn't changed (cursor didn't move)
-            if (style === lastTransform) return;
-            lastTransform = style;
-
-            const match = style.match(/translate\(([^,]+)px,\s*([^)]+)px\)/);
-            if (!match) {
-                cleanHighlights();
-                return;
-            }
-
-            const x = parseFloat(match[1]);
-            const y = parseFloat(match[2]);
-
-            // Use elementFromPoint to find what's at the cursor position
-            const element = document.elementFromPoint(x + 50, y + 10);
-
-            // Walk up to find parent .listitem
-            let node = null;
-            if (element) {
-                node = element;
-                while (node && !node.classList?.contains('listitem')) {
-                    node = node.parentElement;
-                }
+            if (!node) {
+                node = document.querySelector('.listitem-with-caret');
             }
 
             // --- READ PHASE --- (Avoid layout thrashing)
@@ -528,68 +493,47 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
             }
         };
 
-        const scheduleUpdate = () => {
-            // Debounce with RAF to batch with browser paint cycle
-            if (!rafPending) {
-                rafPending = true;
-                requestAnimationFrame(updateFocusedItem);
-            }
+        const scheduleUpdate = (node) => {
+            if (rafPending) return;
+            rafPending = true;
+            requestAnimationFrame(() => updateFocusedItem(node));
         };
 
-        // Watch for changes to the virtual input wrapper's style (transform)
-        const setupObserver = () => {
+        // Watch for the .listitem-with-caret class toggle anywhere in the DOM.
+        const setupCaretClassObserver = () => {
             if (this.isUnloaded) return;
 
-            virtualInputWrapper = document.getElementById('virtualinput-wrapper');
-
-            if (!virtualInputWrapper) {
-                // Retry until the wrapper exists
-                this.observerTimeout = setTimeout(setupObserver, 100);
-                return;
-            }
-
             const observer = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    if (mutation.attributeName === 'style') {
-                        const newTransform = virtualInputWrapper.style.transform;
-                        if (newTransform !== lastTransform) {
-                            scheduleUpdate();
-                            break;
-                        }
+                for (const m of mutations) {
+                    if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
+                    const el = m.target;
+                    if (!(el instanceof Element)) continue;
+                    if (!el.classList.contains('listitem')) continue;
+                    if (el.classList.contains('listitem-with-caret')) {
+                        scheduleUpdate(el);
+                        return;
+                    }
+                    // Class removed from the previously focused item —
+                    // trigger a re-resolve; may find another item or null.
+                    if (el === currentFocusedItem) {
+                        scheduleUpdate(null);
+                        return;
                     }
                 }
             });
 
-            observer.observe(virtualInputWrapper, {
+            observer.observe(document.body, {
+                subtree: true,
                 attributes: true,
-                attributeFilter: ['style']
+                attributeFilter: ['class'],
             });
-
             this.cleanupMethods.push(() => observer.disconnect());
 
-            // Initial update
-            scheduleUpdate();
+            // Initial resolve.
+            scheduleUpdate(null);
         };
 
-        setupObserver();
-
-        // Also listen for keyboard nav events as backup
-        const keyHandler = (e) => {
-            if (NAV_KEYS.has(e.key)) scheduleUpdate();
-        };
-        document.addEventListener('keyup', keyHandler);
-        this.cleanupMethods.push(() => document.removeEventListener('keyup', keyHandler));
-
-        // Listen for clicks in editor area
-        const clickHandler = () => scheduleUpdate();
-        const editorClickTarget = document.querySelector('.editor-wrapper, .page-content, #editor');
-        if (editorClickTarget) {
-            editorClickTarget.addEventListener('click', clickHandler);
-            this.cleanupMethods.push(() => editorClickTarget.removeEventListener('click', clickHandler));
-        } else {
-            document.addEventListener('click', clickHandler);
-            this.cleanupMethods.push(() => document.removeEventListener('click', clickHandler));
-        }
+        setupCaretClassObserver();
 
         // =====================================================
         // JS-driven coloring — all item types via --ir-color var
@@ -714,7 +658,6 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
         // Ensure closed-over DOM references are released on unload
         let statusBarItem = null;
         this.cleanupMethods.push(() => {
-            virtualInputWrapper = null;
             currentFocusedItem = null;
             activeHighlights.length = 0;
             statusBarItem = null;
@@ -779,7 +722,6 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
 
     onUnload() {
         this.isUnloaded = true;
-        if (this.observerTimeout) clearTimeout(this.observerTimeout);
 
         if (this.cleanupMethods) {
             this.cleanupMethods.forEach(cleanupFn => {

@@ -158,34 +158,35 @@ class Plugin extends AppPlugin {
             bold: { name: 'Bold', value: 0.45 }
         };
 
-        // Generate CSS for a given color scheme
-        const generateCSS = (schemeName) => {
-            const scheme = colorSchemes[schemeName];
-            const colors = scheme.colors;
+        // Static stylesheet — injected once for the plugin's lifetime.
+        // Colors are applied via JS-written CSS custom properties (--ir-level-N, --ir-color)
+        // so scheme / opacity / width changes never regenerate the sheet.
+        const STATIC_CSS = `
+/* Thymer Indent Rainbow */
 
-            // Base styles with dynamic width and opacity
-            let css = `
-/* Thymer Indent Rainbow - ${scheme.name} Theme */
-
-/* CSS Variables for theming */
+/* Settings vars — updated by JS, never by regenerating the sheet */
 :root {
-    --bt-line-width: ${currentWidth}px;
-    --bt-line-opacity: ${currentOpacity};
-    --bt-line-opacity-hover: ${Math.min(currentOpacity + 0.5, 0.9)};
+    --bt-line-width: 1px;
+    --bt-line-opacity: 0.3;
+    --bt-line-opacity-hover: 0.8;
     --bt-transition-duration: 0.15s;
 }
 
-/* CRITICAL: Provide fallback values for Thymer's inline calc() expressions.
-   Without these, height calculations like "calc(127px - var(--line-height))" resolve to 0.
-   These are scoped to indent lines only to avoid affecting other Thymer elements. */
+/* CRITICAL: Provide fallback values for Thymer's inline calc() expressions. */
 .listitem-indentline {
     --line-height: 26px;
     --checkbox-size: 23.5px;
     --bullet-size: 10px;
 }
 
-/* Base styling for indent lines - lighter by default */
-.listitem-indentline {
+/* Color applied via JS per-line as --ir-color */
+body.ir-enabled .listitem-indentline {
+    background-color: var(--ir-color, transparent) !important;
+    border-color: var(--ir-color, transparent) !important;
+}
+
+/* Base styling for indent lines */
+body.ir-enabled .listitem-indentline {
     transition: opacity var(--bt-transition-duration) ease,
                 filter var(--bt-transition-duration) ease,
                 background-color var(--bt-transition-duration) ease,
@@ -193,155 +194,102 @@ class Plugin extends AppPlugin {
     opacity: var(--bt-line-opacity) !important;
     min-width: var(--bt-line-width) !important;
     width: var(--bt-line-width) !important;
+    transform-origin: top;
 }
 
-/* Ensure task and bullet indent lines have minimum height as safety net */
-.listitem-task .listitem-indentline,
-.listitem-ulist .listitem-indentline,
-.listitem-olist .listitem-indentline {
+/* Minimum height safety net */
+body.ir-enabled .listitem-task .listitem-indentline,
+body.ir-enabled .listitem-ulist .listitem-indentline,
+body.ir-enabled .listitem-olist .listitem-indentline {
     min-height: 20px !important;
 }
 
 /* Nudge bullet indent line right so it sits under the bullet dot center */
-.listitem-ulist .listitem-indentline {
+body.ir-enabled .listitem-ulist .listitem-indentline {
     transform: translateX(calc(var(--bullet-size) / 2)) !important;
 }
 
 /* Ensure indent lines are visible for all item types */
-.listitem-text .listitem-indentline,
-.listitem-task .listitem-indentline,
-.listitem-ulist .listitem-indentline,
-.listitem-olist .listitem-indentline {
+body.ir-enabled .listitem-text .listitem-indentline,
+body.ir-enabled .listitem-task .listitem-indentline,
+body.ir-enabled .listitem-ulist .listitem-indentline,
+body.ir-enabled .listitem-olist .listitem-indentline {
     display: block !important;
     visibility: visible !important;
 }
 
-/* Highlight on hover - make the line darker/brighter */
-.listitem:hover > .line-div > .listitem-indentline,
-.listitem:hover > .line-check-div ~ .line-div > .listitem-indentline,
-.listitem:hover > .line-bullet-div ~ .line-div > .listitem-indentline,
-.listitem:hover > .line-number-div ~ .line-div > .listitem-indentline {
+/* Highlight on hover */
+body.ir-enabled .listitem:hover > .line-div > .listitem-indentline,
+body.ir-enabled .listitem:hover > .line-check-div ~ .line-div > .listitem-indentline,
+body.ir-enabled .listitem:hover > .line-bullet-div ~ .line-div > .listitem-indentline,
+body.ir-enabled .listitem:hover > .line-number-div ~ .line-div > .listitem-indentline {
     opacity: var(--bt-line-opacity-hover) !important;
     filter: brightness(1.2) !important;
 }
 
-/* Highlight on focus (cursor position) - strongest emphasis */
-.bt-focused > .line-div > .listitem-indentline,
-.bt-focused > .line-check-div ~ .line-div > .listitem-indentline,
-.bt-focused > .line-bullet-div ~ .line-div > .listitem-indentline,
-.bt-focused > .line-number-div ~ .line-div > .listitem-indentline {
+/* Enhanced hover for threading path */
+body.ir-enabled .listitem:hover .line-div .listitem-indentline {
+    filter: brightness(1.1);
+}
+
+/* Highlight on focus (cursor position) */
+body.ir-enabled .bt-focused > .line-div > .listitem-indentline,
+body.ir-enabled .bt-focused > .line-check-div ~ .line-div > .listitem-indentline,
+body.ir-enabled .bt-focused > .line-bullet-div ~ .line-div > .listitem-indentline,
+body.ir-enabled .bt-focused > .line-number-div ~ .line-div > .listitem-indentline {
     opacity: 1 !important;
     filter: brightness(1.3) drop-shadow(0 0 2px currentColor) !important;
 }
 
-/* Color levels based on margin-left (30px increments) */
-`;
-
-            // Generate color rules for each indentation level
-            // Level 0 is at margin-left: 0px, Level 1 at 30px, etc.
-            for (let level = 0; level < 12; level++) {
-                const marginLeft = level * 30;
-                const colorIndex = level % colors.length;
-                const color = colors[colorIndex];
-
-                css += `
-/* Level ${level + 1} (margin-left: ${marginLeft}px) */
-
-/* Plain text and bullet items - margin on line-div */
-.line-div[style*="margin-left: ${marginLeft}px"] > .listitem-indentline,
-.line-div[style*="margin-left:${marginLeft}px"] > .listitem-indentline {
-    background-color: ${color} !important;
-    border-color: ${color} !important;
-}
-
-/* Task items - margin is on line-check-div, color the sibling line-div's indent line */
-.line-check-div[style*="margin-left: ${marginLeft}px"] ~ .line-div > .listitem-indentline,
-.line-check-div[style*="margin-left:${marginLeft}px"] ~ .line-div > .listitem-indentline,
-.line-bullet-div[style*="margin-left: ${marginLeft}px"] ~ .line-div > .listitem-indentline,
-.line-bullet-div[style*="margin-left:${marginLeft}px"] ~ .line-div > .listitem-indentline,
-.line-number-div[style*="margin-left: ${marginLeft}px"] ~ .line-div > .listitem-indentline,
-.line-number-div[style*="margin-left:${marginLeft}px"] ~ .line-div > .listitem-indentline {
-    background-color: ${color} !important;
-    border-color: ${color} !important;
-}
-
-/* Fallback for .listitem with margin-left */
-.listitem[style*="margin-left: ${marginLeft}px"] .listitem-indentline,
-.listitem[style*="margin-left:${marginLeft}px"] .listitem-indentline {
-    background-color: ${color} !important;
-    border-color: ${color} !important;
-}
-`;
-            }
-
-            // Additional hover effects for enhanced threading visibility
-            css += `
-/* Enhanced hover states - brighten the threading path */
-.listitem:hover .line-div .listitem-indentline {
-    filter: brightness(1.1);
-}
-
 /* Dark mode adjustments */
 @media (prefers-color-scheme: dark) {
-    :root {
-        --bt-line-opacity: 0.35;
-    }
-    
-    .listitem-indentline {
+    body.ir-enabled .listitem-indentline {
         filter: brightness(1.1);
     }
 }
 
-/* Support for Thymer's dark theme via class */
-.dark .listitem-indentline,
-[data-theme="dark"] .listitem-indentline {
+body.ir-enabled.dark .listitem-indentline,
+body.ir-enabled [data-theme="dark"] .listitem-indentline {
     filter: brightness(1.1);
-    --bt-line-opacity: 0.35;
-}
-
-/* Smooth animation when expanding/collapsing */
-.listitem-indentline {
-    transform-origin: top;
 }
 `;
 
-            return css;
+        // Write the palette for the current scheme as --ir-level-N root vars.
+        const applySchemeVars = (schemeName) => {
+            const colors = colorSchemes[schemeName].colors;
+            const root = document.documentElement.style;
+            colors.forEach((color, i) => root.setProperty(`--ir-level-${i}`, color));
+            root.setProperty('--ir-level-count', colors.length);
         };
 
-        // Inject, update, or remove CSS
-        const applySettings = () => {
-            if (!isEnabled) {
-                // Remove styles when disabled
-                if (styleElement) {
-                    styleElement.textContent = '';
-                }
-                return;
-            }
+        // Update CSS vars for width / opacity without touching the stylesheet.
+        const applySettingVars = () => {
+            const root = document.documentElement.style;
+            root.setProperty('--bt-line-width', `${currentWidth}px`);
+            root.setProperty('--bt-line-opacity', currentOpacity);
+            root.setProperty('--bt-line-opacity-hover', Math.min(currentOpacity + 0.5, 0.9));
+        };
 
+        // Persist settings to localStorage (only called on user change).
+        const saveSettings = () => {
             localStorage.setItem(STORAGE_KEY, currentScheme);
             localStorage.setItem(WIDTH_KEY, currentWidth);
             localStorage.setItem(ACTIVE_WIDTH_KEY, activeWidth);
             localStorage.setItem(OPACITY_KEY, currentOpacity);
             localStorage.setItem(ENABLED_KEY, isEnabled);
             localStorage.setItem(THREADING_MODE_KEY, threadingMode);
-
-            const css = generateCSS(currentScheme);
-
-            if (this.styleElement) {
-                this.styleElement.textContent = css;
-            } else {
-                this.styleElement = this.ui.injectCSS(css);
-            }
         };
 
-        // Legacy wrapper for theme switching
-        const applyColorScheme = (schemeName) => {
-            currentScheme = schemeName;
-            applySettings();
+        // Toggle the ir-enabled body class which gates all our CSS rules.
+        const applyEnabledState = () => {
+            document.body.classList.toggle('ir-enabled', isEnabled);
         };
 
-        // Initial CSS injection
-        applySettings();
+        // Inject the static stylesheet once.
+        this.styleElement = this.ui.injectCSS(STATIC_CSS);
+        applySchemeVars(currentScheme);
+        applySettingVars();
+        applyEnabledState();
 
         // =====================================================
         // Focus Tracking (Virtual Input Position Tracking)
@@ -420,6 +368,10 @@ class Plugin extends AppPlugin {
             return parents;
         };
 
+        // =====================================================
+        // Focus tracking — resolves focused listitem from cursor pos
+        // =====================================================
+
         const updateFocusedItem = () => {
             if (this.isUnloaded) return;
             rafPending = false;
@@ -428,18 +380,13 @@ class Plugin extends AppPlugin {
             if (!virtualInputWrapper) {
                 virtualInputWrapper = document.getElementById('virtualinput-wrapper');
             }
-
-            if (!virtualInputWrapper) {
-                return;
-            }
+            if (!virtualInputWrapper) return;
 
             // Parse the transform to get cursor position
             const style = virtualInputWrapper.style.transform;
 
             // Skip if transform hasn't changed (cursor didn't move)
-            if (style === lastTransform) {
-                return;
-            }
+            if (style === lastTransform) return;
             lastTransform = style;
 
             const match = style.match(/translate\(([^,]+)px,\s*([^)]+)px\)/);
@@ -452,7 +399,6 @@ class Plugin extends AppPlugin {
             const y = parseFloat(match[2]);
 
             // Use elementFromPoint to find what's at the cursor position
-            // Add a small offset to ensure we hit the line content area
             const element = document.elementFromPoint(x + 50, y + 10);
 
             // Walk up to find parent .listitem
@@ -466,18 +412,15 @@ class Plugin extends AppPlugin {
 
             // --- READ PHASE --- (Avoid layout thrashing)
             const highlightData = [];
-            
+
             if (node && document.body.contains(node) && node.offsetParent !== null) {
                 const parents = getParents(node);
-                
+
                 if (parents.length > 0) {
                     const targetLineDiv = node.querySelector('.line-div') || node;
                     const targetRect = targetLineDiv.getBoundingClientRect();
 
-                    // Resolve an effective single-line height so that wrapped
-                    // items anchor their horizontal arm to the first wrap line
-                    // (matching the bullet/checkbox/number prefix) rather than
-                    // the vertical center of the whole wrapped block.
+                    // Resolve effective single-line height to anchor arm to first wrap line.
                     let lineHeight = 0;
                     if (targetLineDiv && targetLineDiv.nodeType === 1) {
                         const lh = parseFloat(getComputedStyle(targetLineDiv).lineHeight);
@@ -515,10 +458,6 @@ class Plugin extends AppPlugin {
 
                                 const h = tY - pRect.top;
 
-                                // Find the left edge of the first child of the target node
-                                // that carries a margin-left (the prefix: number/bullet/checkbox).
-                                // That is the natural endpoint for the horizontal arm.
-                                // Fall back to .line-div left if no such child exists.
                                 let armEndX = tRect.left - 5;
                                 for (let ci = 0; ci < targetPointNode.children.length; ci++) {
                                     const ch = targetPointNode.children[ci];
@@ -546,22 +485,15 @@ class Plugin extends AppPlugin {
             }
 
             // --- WRITE PHASE ---
-            // Update focus class
             if (node !== currentFocusedItem) {
-                if (currentFocusedItem) {
-                    currentFocusedItem.classList.remove('bt-focused');
-                }
-                if (node) {
-                    node.classList.add('bt-focused');
-                }
+                if (currentFocusedItem) currentFocusedItem.classList.remove('bt-focused');
+                if (node) node.classList.add('bt-focused');
                 currentFocusedItem = node;
             }
 
-            // Write Phase: Recycle elements to improve performance
             for (let i = 0; i < highlightData.length; i++) {
                 const data = highlightData[i];
                 let highlight;
-                
                 if (i < activeHighlights.length) {
                     highlight = activeHighlights[i];
                     if (highlight.parentElement !== data.parent) {
@@ -574,27 +506,22 @@ class Plugin extends AppPlugin {
                     data.parent.appendChild(highlight);
                     activeHighlights.push(highlight);
                 }
-
-                highlight.style.cssText = `
-                    position: absolute;
-                    top: ${data.top}px;
-                    left: ${data.left}px;
-                    width: ${data.width}px;
-                    height: ${data.height}px;
-                    border-left: ${activeWidth}px solid ${data.color};
-                    border-bottom: ${activeWidth}px solid ${data.color};
-                    border-bottom-left-radius: 6px;
-                    box-sizing: border-box;
-                    background-color: transparent;
-                    z-index: 10;
-                    pointer-events: none;
-                    opacity: 1;
-                    will-change: opacity, filter;
-                    filter: brightness(1.5) drop-shadow(0 0 3px ${data.color});
-                `;
+                highlight.style.position = 'absolute';
+                highlight.style.top = `${data.top}px`;
+                highlight.style.left = `${data.left}px`;
+                highlight.style.width = `${data.width}px`;
+                highlight.style.height = `${data.height}px`;
+                highlight.style.borderLeft = `${activeWidth}px solid ${data.color}`;
+                highlight.style.borderBottom = `${activeWidth}px solid ${data.color}`;
+                highlight.style.borderBottomLeftRadius = '6px';
+                highlight.style.boxSizing = 'border-box';
+                highlight.style.backgroundColor = 'transparent';
+                highlight.style.zIndex = '10';
+                highlight.style.pointerEvents = 'none';
+                highlight.style.opacity = '1';
+                highlight.style.filter = `brightness(1.5) drop-shadow(0 0 3px ${data.color})`;
             }
 
-            // Remove any excess highlights that are no longer needed
             while (activeHighlights.length > highlightData.length) {
                 const h = activeHighlights.pop();
                 if (h.parentElement) h.parentElement.removeChild(h);
@@ -612,7 +539,7 @@ class Plugin extends AppPlugin {
         // Watch for changes to the virtual input wrapper's style (transform)
         const setupObserver = () => {
             if (this.isUnloaded) return;
-            
+
             virtualInputWrapper = document.getElementById('virtualinput-wrapper');
 
             if (!virtualInputWrapper) {
@@ -621,9 +548,7 @@ class Plugin extends AppPlugin {
                 return;
             }
 
-            // Observe style attribute changes on the virtual input wrapper
             const observer = new MutationObserver((mutations) => {
-                // Check if any mutation actually changed the transform
                 for (const mutation of mutations) {
                     if (mutation.attributeName === 'style') {
                         const newTransform = virtualInputWrapper.style.transform;
@@ -646,161 +571,148 @@ class Plugin extends AppPlugin {
             scheduleUpdate();
         };
 
-        // Start observing
         setupObserver();
 
-        // =====================================================
-        // JS-driven coloring for ulist / olist items
-        // =====================================================
-        // CSS selectors can't color these because the element that
-        // carries margin-left varies between Thymer versions/builds.
-        // Instead, we scan all direct children for any margin-left
-        // and apply the matching rainbow color directly.
+        // Also listen for keyboard nav events as backup
+        const keyHandler = (e) => {
+            if (NAV_KEYS.has(e.key)) scheduleUpdate();
+        };
+        document.addEventListener('keyup', keyHandler);
+        this.cleanupMethods.push(() => document.removeEventListener('keyup', keyHandler));
 
-        const getListItemColor = (item, colors) => {
+        // Listen for clicks in editor area
+        const clickHandler = () => scheduleUpdate();
+        const editorClickTarget = document.querySelector('.editor-wrapper, .page-content, #editor');
+        if (editorClickTarget) {
+            editorClickTarget.addEventListener('click', clickHandler);
+            this.cleanupMethods.push(() => editorClickTarget.removeEventListener('click', clickHandler));
+        } else {
+            document.addEventListener('click', clickHandler);
+            this.cleanupMethods.push(() => document.removeEventListener('click', clickHandler));
+        }
+
+        // =====================================================
+        // JS-driven coloring — all item types via --ir-color var
+        // =====================================================
+
+        const INDENT_STEP = 30;
+
+        const colorIndentLine = (item) => {
+            const indentLine = item.querySelector('.listitem-indentline');
+            if (!indentLine) return;
+
+            const lineDiv = item.querySelector('.line-div');
+            const isEmpty = lineDiv
+                ? !Array.from(lineDiv.childNodes).some(n =>
+                    !(n.nodeType === 1 && (n.classList?.contains('listitem-indentline') || n.classList?.contains('bt-active-highlight')))
+                    && (n.textContent || '').trim().length > 0
+                  )
+                : !(item.textContent || '').trim();
+
+            if (isEmpty) {
+                indentLine.style.setProperty('display', 'none', 'important');
+                indentLine.dataset.btEmpty = '1';
+            } else if (indentLine.dataset.btEmpty) {
+                indentLine.style.removeProperty('display');
+                delete indentLine.dataset.btEmpty;
+            }
+
             let marginLeft = 0;
             for (let i = 0; i < item.children.length; i++) {
                 const child = item.children[i];
                 if (child.style && child.style.marginLeft) {
-                    marginLeft = parseInt(child.style.marginLeft) || 0;
-                    break;
+                    const ml = parseInt(child.style.marginLeft) || 0;
+                    if (ml >= 0) { marginLeft = ml; break; }
                 }
             }
             if (marginLeft === 0 && item.style && item.style.marginLeft) {
                 marginLeft = parseInt(item.style.marginLeft) || 0;
             }
-            if (marginLeft <= 0) return null;
-            const level = Math.floor(marginLeft / 30);
-            return colors[level % colors.length];
-        };
 
-        const applyListColors = () => {
-            if (!isEnabled) return;
-            const colors = colorSchemes[currentScheme].colors;
-            const items = document.querySelectorAll('.listitem');
-            for (const item of items) {
-                const indentLine = item.querySelector('.listitem-indentline');
-                if (!indentLine) continue;
-
-                // Hide indent line if the content area has no text, ignoring the indent line itself
-                const lineDiv = item.querySelector('.line-div');
-                const contentText = lineDiv
-                    ? Array.from(lineDiv.childNodes)
-                        .filter(n => !(n.nodeType === 1 && (n.classList?.contains('listitem-indentline') || n.classList?.contains('bt-active-highlight'))))
-                        .map(n => n.textContent || '')
-                        .join('')
-                        .trim()
-                    : (item.textContent || '').trim();
-
-                // Treat as empty if no text content
-                if (contentText.length === 0) {
-                    indentLine.style.setProperty('display', 'none', 'important');
-                    indentLine.dataset.btEmpty = '1';
-                } else if (indentLine.dataset.btEmpty) {
-                    indentLine.style.removeProperty('display');
-                    delete indentLine.dataset.btEmpty;
-                }
-
-                // JS-driven coloring is only needed for lists/tasks where margin is on the prefix
-                if (item.classList.contains('listitem-ulist') || item.classList.contains('listitem-olist') || item.classList.contains('listitem-task')) {
-                    let marginLeft = 0;
-                    for (let i = 0; i < item.children.length; i++) {
-                        const child = item.children[i];
-                        if (child.style && child.style.marginLeft) {
-                            const ml = parseInt(child.style.marginLeft) || 0;
-                            if (ml > 0) { marginLeft = ml; break; }
-                        }
-                    }
-                    if (marginLeft === 0 && item.style && item.style.marginLeft) {
-                        marginLeft = parseInt(item.style.marginLeft) || 0;
-                    }
-
-                    // Always color, including level 0, so top-level bullets/tasks get a line
-                    const level = Math.max(0, Math.floor(marginLeft / 30));
-                    const color = colors[level % colors.length];
-                    indentLine.style.setProperty('background-color', color, 'important');
-                    indentLine.style.setProperty('border-color', color, 'important');
-                    indentLine.dataset.btManaged = '1';
-                }
-            }
+            const level = Math.max(0, Math.floor(marginLeft / INDENT_STEP));
+            indentLine.style.setProperty('--ir-color', `var(--ir-level-${level})`, 'important');
+            indentLine.dataset.btManaged = '1';
         };
 
         const clearListColors = () => {
             const lines = document.querySelectorAll('.listitem-indentline[data-bt-managed], .listitem-indentline[data-bt-empty]');
             for (const line of lines) {
-                line.style.removeProperty('background-color');
-                line.style.removeProperty('border-color');
+                line.style.removeProperty('--ir-color');
                 line.style.removeProperty('display');
                 delete line.dataset.btManaged;
                 delete line.dataset.btEmpty;
             }
         };
 
-        // One-shot diagnostic: logs the class names of children of the first
-        // bullet/numbered item so we can see the actual Thymer DOM structure.
-        let diagnosticDone = false;
-        const runDiagnostic = () => {
-            if (diagnosticDone) return;
-            const ulist = document.querySelector('.listitem-ulist');
-            const olist = document.querySelector('.listitem-olist');
-            if (ulist || olist) {
-                diagnosticDone = true;
-                [['ulist', ulist], ['olist', olist]].forEach(([type, item]) => {
-                    if (!item) return;
-                    const children = Array.from(item.children).map(c =>
-                        `<${c.tagName.toLowerCase()} class="${c.className}" margin="${c.style.marginLeft || ''}">`);
-                    console.log(`[IndentRainbow] ${type} DOM children: ${children.join(' | ')}`);
-                    console.log(`[IndentRainbow] ${type} outerHTML (first 600): ${item.outerHTML.substring(0, 600)}`);
-                });
-            }
+        const applyListColors = (items) => {
+            if (!isEnabled) return;
+            for (const item of items) colorIndentLine(item);
         };
 
         let listColorRafPending = false;
-        const scheduleListColorUpdate = () => {
+        let pendingItems = new Set();
+
+        const scheduleListColorUpdate = (items) => {
+            if (items) items.forEach(i => pendingItems.add(i));
             if (!listColorRafPending) {
                 listColorRafPending = true;
                 requestAnimationFrame(() => {
                     listColorRafPending = false;
-                    applyListColors();
-                    runDiagnostic();
+                    const toProcess = pendingItems.size > 0
+                        ? [...pendingItems]
+                        : [...document.querySelectorAll('.listitem')];
+                    pendingItems.clear();
+                    applyListColors(toProcess);
                 });
             }
         };
 
-        const listColorObserver = new MutationObserver(scheduleListColorUpdate);
-        listColorObserver.observe(document.body, { childList: true, subtree: true });
+        // =====================================================
+        // Win 2: Scoped mutation observer — editor container only
+        // =====================================================
+
+        const editorContainer = document.querySelector('.editor-wrapper, .page-content, #editor') || document.body;
+
+        const listColorObserver = new MutationObserver((mutations) => {
+            const affected = new Set();
+            for (const m of mutations) {
+                if (m.type === 'childList') {
+                    for (const node of m.addedNodes) {
+                        if (node.nodeType !== 1) continue;
+                        if (node.classList.contains('listitem')) {
+                            affected.add(node);
+                        } else if (node.querySelector) {
+                            node.querySelectorAll('.listitem').forEach(n => affected.add(n));
+                        }
+                    }
+                } else if (m.type === 'attributes') {
+                    const li = m.target.closest?.('.listitem');
+                    if (li) affected.add(li);
+                }
+            }
+            if (affected.size > 0) {
+                scheduleListColorUpdate(affected);
+            } else {
+                scheduleListColorUpdate(null);
+            }
+        });
+
+        listColorObserver.observe(editorContainer, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['style', 'class']
+        });
+
         this.cleanupMethods.push(() => {
             listColorObserver.disconnect();
             clearListColors();
         });
 
-        // Apply once immediately (handles items already in DOM)
-        setTimeout(scheduleListColorUpdate, 500);
+        scheduleListColorUpdate(null);
 
-        // Also listen for keyboard events as backup (O(1) Set lookup)
-        const keyHandler = (e) => {
-            if (NAV_KEYS.has(e.key)) {
-                scheduleUpdate();
-            }
-        };
-        document.addEventListener('keyup', keyHandler);
-        this.cleanupMethods.push(() => document.removeEventListener('keyup', keyHandler));
-
-        // Listen for clicks in editor area only, fallback to document
-        const clickHandler = () => scheduleUpdate();
-        const editorContainer = document.querySelector('.editor-wrapper, .page-content, #editor');
-        if (editorContainer) {
-            editorContainer.addEventListener('click', clickHandler);
-            this.cleanupMethods.push(() => editorContainer.removeEventListener('click', clickHandler));
-        } else {
-            document.addEventListener('click', clickHandler);
-            this.cleanupMethods.push(() => document.removeEventListener('click', clickHandler));
-        }
-
-        // Shared update function – applies settings and keeps the status bar tooltip in sync
-        let statusBarItem = null;
-        
         // Ensure closed-over DOM references are released on unload
+        let statusBarItem = null;
         this.cleanupMethods.push(() => {
             virtualInputWrapper = null;
             currentFocusedItem = null;
@@ -815,9 +727,12 @@ class Plugin extends AppPlugin {
             if (newSettings.currentOpacity !== undefined) currentOpacity = parseFloat(newSettings.currentOpacity);
             if (newSettings.isEnabled !== undefined) isEnabled = newSettings.isEnabled;
             if (newSettings.threadingMode !== undefined) threadingMode = newSettings.threadingMode;
-            applySettings();
+            if (newSettings.currentScheme !== undefined) applySchemeVars(currentScheme);
+            applySettingVars();
+            applyEnabledState();
+            saveSettings();
             if (isEnabled) {
-                scheduleListColorUpdate();
+                scheduleListColorUpdate(null);
             } else {
                 clearListColors();
             }
@@ -866,34 +781,22 @@ class Plugin extends AppPlugin {
         this.isUnloaded = true;
         if (this.observerTimeout) clearTimeout(this.observerTimeout);
 
-        // Remove globally bound event listeners and unobserve mutation observers
         if (this.cleanupMethods) {
             this.cleanupMethods.forEach(cleanupFn => {
-                try {
-                    cleanupFn();
-                } catch (e) {
+                try { cleanupFn(); } catch (e) {
                     console.warn('Failed to clean up plugin resource:', e);
                 }
             });
             this.cleanupMethods = [];
         }
 
-        // Clean up focus markers and highlights
-        const highlights = document.querySelectorAll('.bt-active-highlight');
-        highlights.forEach(el => el.remove());
+        document.querySelectorAll('.bt-active-highlight').forEach(el => el.remove());
+        document.querySelectorAll('.bt-focused').forEach(el => el.classList.remove('bt-focused'));
+        document.body.classList.remove('ir-enabled');
 
-        const focusedElements = document.querySelectorAll('.bt-focused');
-        focusedElements.forEach(el => el.classList.remove('bt-focused'));
-
-        // Delete style element
         if (this.styleElement) {
             this.styleElement.remove();
             this.styleElement = null;
-        } else {
-            const fallbackStyleElement = document.querySelector('style[data-source="thymer-indent-rainbow"]');
-            if (fallbackStyleElement) {
-                fallbackStyleElement.remove();
-            }
         }
     }
 
@@ -1085,6 +988,70 @@ class Plugin extends AppPlugin {
                 border: 1px solid color-mix(in srgb, var(--ir-panel-bg) 55%, transparent);
                 box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
             }
+            .ir-preview {
+                padding: 16px 18px 14px;
+                border-radius: 14px;
+                border: 1px solid var(--ir-panel-border);
+                background: var(--ir-panel-bg);
+                margin-bottom: 16px;
+            }
+            .ir-preview-label {
+                font-size: 0.78em;
+                font-weight: 600;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                color: var(--ir-text-secondary);
+                margin-bottom: 10px;
+            }
+            .ir-preview-canvas {
+                position: relative;
+                height: 116px;
+                border-radius: 8px;
+                background: color-mix(in srgb, var(--ir-soft-bg) 60%, transparent);
+                overflow: hidden;
+            }
+            .ir-preview-canvas.ir-preview-disabled {
+                opacity: 0.35;
+            }
+            .ir-preview-row {
+                position: absolute;
+                left: 0; right: 0;
+                height: 26px;
+                display: flex;
+                align-items: center;
+            }
+            .ir-preview-bar {
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                border-radius: 999px;
+                transition: width 0.15s, opacity 0.15s, background-color 0.15s;
+            }
+            .ir-preview-text {
+                position: absolute;
+                left: 0;
+                right: 0;
+                padding-left: 10px;
+                font-size: 0.8em;
+                color: var(--ir-text-secondary);
+                opacity: 0.5;
+                white-space: nowrap;
+                overflow: hidden;
+                pointer-events: none;
+            }
+            .ir-preview-arm {
+                position: absolute;
+                border-bottom-left-radius: 6px;
+                box-sizing: border-box;
+                pointer-events: none;
+                transition: border-width 0.15s, border-color 0.15s;
+            }
+            .ir-preview-legend {
+                margin-top: 8px;
+                font-size: 0.82em;
+                color: var(--ir-text-secondary);
+                opacity: 0.75;
+            }
             @media (max-width: 720px) {
                 .ir-settings {
                     padding: 18px 16px 32px;
@@ -1155,7 +1122,116 @@ class Plugin extends AppPlugin {
 
         const formatWidthValue = (value) => value === 0 ? 'Hidden' : `${value}px`;
 
+        // Shared local settings state — mutated by every control, drives renderPreview
+        const currentSettings = Object.assign({}, settings);
+
+        // -------------------------------------------------------
+        // Live preview
+        // -------------------------------------------------------
+        const previewCard = document.createElement('div');
+        previewCard.className = 'ir-preview';
+        const previewLabel = document.createElement('div');
+        previewLabel.className = 'ir-preview-label';
+        previewLabel.textContent = 'Live Preview';
+        previewCard.appendChild(previewLabel);
+        const previewCanvas = document.createElement('div');
+        previewCanvas.className = 'ir-preview-canvas';
+        previewCard.appendChild(previewCanvas);
+        const previewLegend = document.createElement('div');
+        previewLegend.className = 'ir-preview-legend';
+        previewLegend.textContent = 'Updates live as you adjust settings below.';
+        previewCard.appendChild(previewLegend);
+        container.appendChild(previewCard);
+
+        const PREVIEW_ROWS = 4;
+        const ROW_H = 26;
+        const INDENT_STEP = 24;
+        const BASE_LEFT = 12;
+
+        const renderPreview = (s) => {
+            previewCanvas.innerHTML = '';
+            previewCanvas.classList.toggle('ir-preview-disabled', !s.isEnabled);
+
+            const colors = api.colorSchemes[s.currentScheme]?.colors || [];
+            const barWidth = Math.max(0, s.currentWidth);
+            const opacity = parseFloat(s.currentOpacity);
+
+            // Draw 4 nested rows
+            for (let i = 0; i < PREVIEW_ROWS; i++) {
+                const marginLeft = i * INDENT_STEP + BASE_LEFT;
+                const top = i * ROW_H + Math.floor((116 - PREVIEW_ROWS * ROW_H) / 2);
+                const color = colors[i % colors.length] || '#888';
+
+                const row = document.createElement('div');
+                row.className = 'ir-preview-row';
+                row.style.top = `${top}px`;
+
+                // Vertical bar
+                const bar = document.createElement('div');
+                bar.className = 'ir-preview-bar';
+                bar.style.left = `${marginLeft}px`;
+                bar.style.width = `${barWidth}px`;
+                bar.style.backgroundColor = color;
+                bar.style.opacity = opacity;
+                row.appendChild(bar);
+
+                // Placeholder text line
+                const txt = document.createElement('div');
+                txt.className = 'ir-preview-text';
+                txt.style.paddingLeft = `${marginLeft + barWidth + 10}px`;
+                txt.textContent = i === 0 ? 'Top level item' : i === 1 ? '  Nested item' : i === 2 ? '    Deeper nesting' : '      Active item ←';
+                row.appendChild(txt);
+
+                previewCanvas.appendChild(row);
+            }
+
+            // Draw active threading arm(s) from row 0/1/2 down to row 3
+            const activeWidth = Math.max(0, parseInt(s.activeWidth, 10));
+            if (activeWidth > 0) {
+                const deepIdx = PREVIEW_ROWS - 1;
+                const deepTop = deepIdx * ROW_H + Math.floor((116 - PREVIEW_ROWS * ROW_H) / 2);
+                const deepLeft = deepIdx * INDENT_STEP + BASE_LEFT;
+
+                const startIdxes = s.threadingMode === 'staircase'
+                    ? [0, 1, 2]   // arm from each ancestor
+                    : [0];        // one long arm from the top
+
+                for (const si of startIdxes) {
+                    const srcTop = si * ROW_H + Math.floor((116 - PREVIEW_ROWS * ROW_H) / 2);
+                    const srcLeft = si * INDENT_STEP + BASE_LEFT;
+                    const srcColor = colors[si % colors.length] || '#888';
+
+                    const armTargetTop = s.threadingMode === 'staircase' && si < PREVIEW_ROWS - 1
+                        ? (si + 1) * ROW_H + Math.floor((116 - PREVIEW_ROWS * ROW_H) / 2) + ROW_H / 2
+                        : deepTop + ROW_H / 2;
+
+                    const armH = armTargetTop - srcTop;
+                    const armW = (s.threadingMode === 'staircase'
+                        ? (si + 1) * INDENT_STEP + BASE_LEFT
+                        : deepLeft) - srcLeft + activeWidth;
+
+                    if (armH <= 0 || armW <= 0) continue;
+
+                    const arm = document.createElement('div');
+                    arm.className = 'ir-preview-arm';
+                    arm.style.top = `${srcTop}px`;
+                    arm.style.left = `${srcLeft}px`;
+                    arm.style.width = `${armW}px`;
+                    arm.style.height = `${armH}px`;
+                    arm.style.borderLeft = `${activeWidth}px solid ${srcColor}`;
+                    arm.style.borderBottom = `${activeWidth}px solid ${srcColor}`;
+                    arm.style.filter = `brightness(1.5) drop-shadow(0 0 3px ${srcColor})`;
+                    arm.style.opacity = '1';
+                    previewCanvas.appendChild(arm);
+                }
+            }
+        };
+
+        renderPreview(currentSettings);
+
+        // -------------------------------------------------------
         // General Card
+        // -------------------------------------------------------
         const genCard = document.createElement('div');
         genCard.className = 'ir-card';
         const genTitle = document.createElement('h3');
@@ -1174,15 +1250,17 @@ class Plugin extends AppPlugin {
             const opt = document.createElement('option');
             opt.value = key;
             opt.textContent = api.colorSchemes[key].name;
-            opt.selected = settings.currentScheme === key;
+            opt.selected = currentSettings.currentScheme === key;
             schemeSelect.appendChild(opt);
         });
         const schemeSwatches = document.createElement('div');
         schemeSwatches.className = 'ir-swatch-row';
-        setSchemeSwatches(settings.currentScheme, schemeSwatches);
+        setSchemeSwatches(currentSettings.currentScheme, schemeSwatches);
         schemeSelect.addEventListener('change', (e) => {
+            currentSettings.currentScheme = e.target.value;
             setSchemeSwatches(e.target.value, schemeSwatches);
             api.updateSettings({ currentScheme: e.target.value });
+            renderPreview(currentSettings);
         });
         genCard.appendChild(createField('Color Scheme', 'Choose the palette used for nested indent levels.', schemeSelect, schemeSwatches));
 
@@ -1193,10 +1271,14 @@ class Plugin extends AppPlugin {
             const opt = document.createElement('option');
             opt.value = api.opacityPresets[key].value;
             opt.textContent = api.opacityPresets[key].name;
-            opt.selected = settings.currentOpacity == api.opacityPresets[key].value;
+            opt.selected = currentSettings.currentOpacity == api.opacityPresets[key].value;
             opacitySelect.appendChild(opt);
         });
-        opacitySelect.addEventListener('change', (e) => api.updateSettings({ currentOpacity: e.target.value }));
+        opacitySelect.addEventListener('change', (e) => {
+            currentSettings.currentOpacity = parseFloat(e.target.value);
+            api.updateSettings({ currentOpacity: e.target.value });
+            renderPreview(currentSettings);
+        });
         genCard.appendChild(createField('Opacity', 'Keep guides subtle or make them easier to pick out while scanning.', opacitySelect));
 
         // Line Width Slider
@@ -1205,7 +1287,7 @@ class Plugin extends AppPlugin {
         widthRow.className = 'ir-slider-meta';
         const widthVal = document.createElement('span');
         widthVal.className = 'ir-val-text';
-        widthVal.textContent = formatWidthValue(settings.currentWidth);
+        widthVal.textContent = formatWidthValue(currentSettings.currentWidth);
         const widthHint = document.createElement('span');
         widthHint.className = 'ir-subtitle';
         widthHint.textContent = 'Thickness of the standard guide line';
@@ -1218,10 +1300,12 @@ class Plugin extends AppPlugin {
         widthSlider.min = '0';
         widthSlider.max = '4';
         widthSlider.step = '1';
-        widthSlider.value = settings.currentWidth;
+        widthSlider.value = currentSettings.currentWidth;
         widthSlider.addEventListener('input', (e) => {
-            widthVal.textContent = formatWidthValue(parseInt(e.target.value, 10));
+            currentSettings.currentWidth = parseInt(e.target.value, 10);
+            widthVal.textContent = formatWidthValue(currentSettings.currentWidth);
             api.updateSettings({ currentWidth: e.target.value });
+            renderPreview(currentSettings);
         });
         widthGroup.appendChild(widthSlider);
         genCard.appendChild(createField('Line Width', 'Adjust the default indent guide weight used across the page.', widthGroup, null, 'ir-slider-control'));
@@ -1246,14 +1330,18 @@ class Plugin extends AppPlugin {
         const optStaircase = document.createElement('option');
         optStaircase.value = 'staircase';
         optStaircase.textContent = 'Staircase (Follows indentation path)';
-        optStaircase.selected = settings.threadingMode === 'staircase';
+        optStaircase.selected = currentSettings.threadingMode === 'staircase';
         threadStyleSelect.appendChild(optStaircase);
         const optStretched = document.createElement('option');
         optStretched.value = 'stretched';
         optStretched.textContent = 'Stretched (Direct line from parent)';
-        optStretched.selected = settings.threadingMode === 'stretched';
+        optStretched.selected = currentSettings.threadingMode === 'stretched';
         threadStyleSelect.appendChild(optStretched);
-        threadStyleSelect.addEventListener('change', (e) => api.updateSettings({ threadingMode: e.target.value }));
+        threadStyleSelect.addEventListener('change', (e) => {
+            currentSettings.threadingMode = e.target.value;
+            api.updateSettings({ threadingMode: e.target.value });
+            renderPreview(currentSettings);
+        });
         threadCard.appendChild(createField('Threading Style', 'Choose whether the active path steps through each level or stretches directly to the current line.', threadStyleSelect));
 
         // Active Thread Width Slider
@@ -1262,7 +1350,7 @@ class Plugin extends AppPlugin {
         aWidthRow.className = 'ir-slider-meta';
         const aWidthVal = document.createElement('span');
         aWidthVal.className = 'ir-val-text';
-        aWidthVal.textContent = settings.activeWidth + 'px';
+        aWidthVal.textContent = formatWidthValue(currentSettings.activeWidth);
         const aWidthHint = document.createElement('span');
         aWidthHint.className = 'ir-subtitle';
         aWidthHint.textContent = 'Thickness of the focused thread highlight';
@@ -1275,10 +1363,12 @@ class Plugin extends AppPlugin {
         aWidthSlider.min = '0';
         aWidthSlider.max = '4';
         aWidthSlider.step = '1';
-        aWidthSlider.value = settings.activeWidth;
+        aWidthSlider.value = currentSettings.activeWidth;
         aWidthSlider.addEventListener('input', (e) => {
-            aWidthVal.textContent = e.target.value + 'px';
+            currentSettings.activeWidth = parseInt(e.target.value, 10);
+            aWidthVal.textContent = formatWidthValue(currentSettings.activeWidth);
             api.updateSettings({ activeWidth: e.target.value });
+            renderPreview(currentSettings);
         });
         aWidthGroup.appendChild(aWidthSlider);
         threadCard.appendChild(createField('Active Thread Width', 'Set how strongly the currently focused hierarchy path stands out.', aWidthGroup, null, 'ir-slider-control'));

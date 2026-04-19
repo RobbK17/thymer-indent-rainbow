@@ -473,7 +473,23 @@ class Plugin extends AppPlugin {
                 if (parents.length > 0) {
                     const targetLineDiv = node.querySelector('.line-div') || node;
                     const targetRect = targetLineDiv.getBoundingClientRect();
-                    
+
+                    // Resolve an effective single-line height so that wrapped
+                    // items anchor their horizontal arm to the first wrap line
+                    // (matching the bullet/checkbox/number prefix) rather than
+                    // the vertical center of the whole wrapped block.
+                    let lineHeight = 0;
+                    if (targetLineDiv && targetLineDiv.nodeType === 1) {
+                        const lh = parseFloat(getComputedStyle(targetLineDiv).lineHeight);
+                        if (!isNaN(lh) && lh > 0) lineHeight = lh;
+                    }
+                    if (!lineHeight) {
+                        const rootLh = parseFloat(
+                            getComputedStyle(document.documentElement).getPropertyValue('--line-height')
+                        );
+                        lineHeight = !isNaN(rootLh) && rootLh > 0 ? rootLh : 26;
+                    }
+
                     if (targetRect.height > 0) {
                         for (let index = 0; index < parents.length; index++) {
                             const p = parents[index];
@@ -485,7 +501,10 @@ class Plugin extends AppPlugin {
                             const tRect = tLineDiv.getBoundingClientRect();
                             if (tRect.height === 0) continue;
 
-                            const tY = tRect.top + (tRect.height / 2);
+                            // Anchor to the first visual line so wrapped items
+                            // still point at their prefix (bullet/check/number).
+                            const firstLineH = Math.min(tRect.height, lineHeight);
+                            const tY = tRect.top + (firstLineH / 2);
 
                             const pIndent = p.querySelector('.listitem-indentline');
                             const pLine = pIndent ? pIndent.parentElement : null;

@@ -204,9 +204,29 @@ body.ir-enabled .listitem-olist .listitem-indentline {
     min-height: 20px !important;
 }
 
-/* Nudge bullet indent line right so it sits under the bullet dot center */
+/* Global horizontal nudge (~1pt) so guides sit centered under bullets/numbers/
+   checkboxes. Applied uniformly across all item types (including headings,
+   which lack the listitem-text/task/ulist/olist classes) so per-level
+   spacing stays uniform. Tweak --ir-align-nudge to fine-tune. */
+:root {
+    --ir-align-nudge: 1.5px;
+}
+
+/* Base: nudge applies to every indent line (catches headings + text + task). */
+body.ir-enabled .listitem-indentline {
+    transform: translateX(var(--ir-align-nudge)) !important;
+}
+
+/* Align bullet indent line with text/heading guides, then apply the global
+   nudge. Bullet items sit 6.75px left of text items of the same level. */
 body.ir-enabled .listitem-ulist .listitem-indentline {
-    transform: translateX(calc(var(--bullet-size) / 2)) !important;
+    transform: translateX(calc(6.75px + var(--ir-align-nudge))) !important;
+}
+
+/* Align numbered-list indent line with text/heading guides, then apply the
+   global nudge. Numbered items sit 2.63px right of text items of same level. */
+body.ir-enabled .listitem-olist .listitem-indentline {
+    transform: translateX(calc(-2.63px + var(--ir-align-nudge))) !important;
 }
 
 /* Ensure indent lines are visible for all item types */

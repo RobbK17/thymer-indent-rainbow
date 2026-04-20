@@ -124,10 +124,10 @@ class Plugin extends AppPlugin {
             Amber: {
                 name: 'Amber',
                 colors: [
-                    '#ffd700',  // Gold
-                    '#ffc107',  // Amber
-                    '#ffa000',  // Dark Amber
-                    '#ff8f00',  // Light Amber
+                    '#fff200',  // Gold
+                    '#ffbf00',  // Amber
+                    '#df910b',  // Dark Amber
+                    '#ca6c00',  // Light Amber
                     '#ff7f00',  // Medium Amber
                     '#b3924d',  // Old Gold
                 ]

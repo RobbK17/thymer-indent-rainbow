@@ -774,11 +774,19 @@ body.ir-enabled.bt-bullets .listitem.bt-zoom-start-line > .line-div > .bt-bullet
 
                 const rowGuid = li.getAttribute('data-guid');
                 if (rowGuid && this.zoomStartLineGuids.has(rowGuid)) {
-                    li.classList.add('bt-zoom-start-line');
-                    const b = lineDiv.querySelector(':scope > .bt-bullet')
-                        || lineDiv.querySelector('.bt-bullet');
-                    if (b) b.remove();
-                    continue;
+                    /* Zoom-start lines hide the bullet while empty; once there is text, behave like a normal row. */
+                    if (!lineDomLooksEmpty(li)) {
+                        this.zoomStartLineGuids.delete(rowGuid);
+                        li.classList.remove('bt-zoom-start-line');
+                    } else {
+                        li.classList.add('bt-zoom-start-line');
+                        const b = lineDiv.querySelector(':scope > .bt-bullet')
+                            || lineDiv.querySelector('.bt-bullet');
+                        if (b) b.remove();
+                        continue;
+                    }
+                } else if (li.classList.contains('bt-zoom-start-line')) {
+                    li.classList.remove('bt-zoom-start-line');
                 }
 
                 const existing = lineDiv.querySelector(':scope > .bt-bullet')

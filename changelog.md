@@ -7,6 +7,11 @@
 - With **Disclosure carets** disabled and **Bullets** still enabled, parent rows no longer switch to hollow ring bullets while leaves stay filled (that mismatch looked like a bug).
 - Parents now keep the **same filled dot** as leaves and are indicated **subtly** with lower rest opacity; **hover** still brings them up to the same strength as other bullets.
 
+### Zoom-start lines and bullets
+
+- **Zoom-start** rows (empty first line after zoom, or the single empty root on a new note) intentionally had no bullet while empty, but their GUID stayed in `zoomStartLineGuids` for the whole session, so **after you added text the bullet never reappeared** (e.g. deepest line in an outline).
+- When a zoom-start line is no longer empty, its GUID is removed from the set, **`bt-zoom-start-line`** is cleared, and the outline pass injects the normal bullet again; a leftover **`bt-zoom-start-line`** class is also removed if the GUID is no longer tracked.
+
 ### Manifest
 
 - `plugin.json`: version **1.4.1**.

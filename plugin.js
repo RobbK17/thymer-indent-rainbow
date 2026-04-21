@@ -10,15 +10,26 @@
  * - Enhanced visibility on hover
  * - Smooth color transitions
  * - Command palette toggle for different color schemes
+ * - Workflowy-style bullets, disclosure carets, zoom, and reparent-on-create when zoomed
  */
 
 class Plugin extends AppPlugin {
     onLoad() {
         this.isUnloaded = false;
-        
+
         // Keep track of resources to clean up later
         this.cleanupMethods = [];
         this.styleElement = null;
+
+        /** Line-item GUIDs where we skip injecting `.bt-bullet` (empty zoom / first-edit line). */
+        this.zoomStartLineGuids = new Set();
+
+        /**
+         * When `panel.getNavigation().rootId` is a line (not the record root), new lines
+         * may be reparented under that line — see `lineitem.created` handler.
+         */
+        this.lineZoomRootGuid = null;
+        this._zoomReparentBusy = false;
 
         // Storage keys for persisting settings
         const STORAGE_KEY = 'indent-rainbow-scheme';
@@ -26,7 +37,10 @@ class Plugin extends AppPlugin {
         const ACTIVE_WIDTH_KEY = 'indent-rainbow-active-width';
         const OPACITY_KEY = 'indent-rainbow-opacity';
         const ENABLED_KEY = 'indent-rainbow-enabled';
+        const THREADING_ENABLED_KEY = 'indent-rainbow-threading-enabled';
         const THREADING_MODE_KEY = 'indent-rainbow-threading-mode';
+        const BULLETS_ENABLED_KEY = 'indent-rainbow-bullets-enabled';
+        const TOGGLES_ENABLED_KEY = 'indent-rainbow-toggles-enabled';
 
         // Color schemes for different tastes
         const colorSchemes = {
@@ -149,7 +163,10 @@ class Plugin extends AppPlugin {
         
         let currentOpacity = parseFloat(localStorage.getItem(OPACITY_KEY)) || 0.3;
         let isEnabled = localStorage.getItem(ENABLED_KEY) !== 'false'; // default true
+        let isThreadingEnabled = localStorage.getItem(THREADING_ENABLED_KEY) !== 'false'; // default true
         let threadingMode = localStorage.getItem(THREADING_MODE_KEY) || 'staircase'; // 'staircase' or 'stretched'
+        let isBulletsEnabled = localStorage.getItem(BULLETS_ENABLED_KEY) !== 'false'; // default true
+        let isTogglesEnabled = localStorage.getItem(TOGGLES_ENABLED_KEY) !== 'false'; // default true
 
         // Opacity presets
         const opacityPresets = {
@@ -272,6 +289,131 @@ body.ir-enabled.dark .listitem-indentline,
 body.ir-enabled [data-theme="dark"] .listitem-indentline {
     filter: brightness(1.1);
 }
+
+/* =====================================================
+   Workflowy-style bullets and disclosure carets
+   (gated by body.bt-bullets / body.bt-toggles)
+   ===================================================== */
+body.ir-enabled .bt-bullet {
+    display: none;
+}
+
+body.ir-enabled.bt-bullets .bt-bullet {
+    display: inline-block;
+    box-sizing: border-box;
+    width: 8px;
+    height: 8px;
+    margin-right: 8px;
+    vertical-align: middle;
+    border-radius: 50%;
+    border: 1px solid rgba(128, 128, 128, 0.55);
+    background: currentColor;
+    background-clip: padding-box;
+    opacity: 0.45;
+    flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease,
+        border-color 0.15s ease;
+}
+
+body.ir-enabled.bt-bullets .bt-bullet:hover {
+    opacity: 0.95;
+    border-color: rgba(128, 128, 128, 0.85);
+    transform: scale(1.35);
+    box-shadow: 0 0 0 3px rgba(128, 128, 128, 0.18);
+}
+
+body.ir-enabled.bt-bullets .bt-bullet:active {
+    transform: scale(1.1);
+}
+
+@media (prefers-color-scheme: dark) {
+    body.ir-enabled.bt-bullets .bt-bullet {
+        border-color: rgba(180, 180, 180, 0.45);
+    }
+    body.ir-enabled.bt-bullets .bt-bullet:hover {
+        border-color: rgba(200, 200, 200, 0.75);
+    }
+}
+
+body.ir-enabled.dark .bt-bullets .bt-bullet,
+body.ir-enabled [data-theme="dark"] .bt-bullets .bt-bullet {
+    border-color: rgba(180, 180, 180, 0.45);
+}
+
+body.ir-enabled.dark .bt-bullets .bt-bullet:hover,
+body.ir-enabled [data-theme="dark"] .bt-bullets .bt-bullet:hover {
+    border-color: rgba(200, 200, 200, 0.75);
+}
+
+body.ir-enabled.bt-bullets:not(.bt-toggles) .listitem.bt-has-children > .line-div > .bt-bullet {
+    background: transparent;
+    border: 1.5px solid rgba(128, 128, 128, 0.65);
+    width: 8px;
+    height: 8px;
+    opacity: 0.75;
+}
+
+body.ir-enabled.bt-bullets:not(.bt-toggles) .listitem.bt-has-children > .line-div > .bt-bullet:hover {
+    border-color: rgba(128, 128, 128, 0.95);
+}
+
+@media (prefers-color-scheme: dark) {
+    body.ir-enabled.bt-bullets:not(.bt-toggles) .listitem.bt-has-children > .line-div > .bt-bullet {
+        border-color: rgba(180, 180, 180, 0.55);
+    }
+}
+
+body.ir-enabled.bt-toggles .listitem.bt-has-children > .line-div::before {
+    content: "▾";
+    display: inline-block;
+    width: 18px;
+    height: auto;
+    margin-right: 6px;
+    vertical-align: middle;
+    opacity: 0.6;
+    font-size: 14px;
+    line-height: 1;
+    text-align: center;
+    color: currentColor;
+    cursor: pointer;
+    transition: transform 0.12s ease, opacity 0.12s ease;
+    transform-origin: center;
+}
+
+body.ir-enabled.bt-toggles .listitem.bt-has-children > .line-div:hover::before {
+    opacity: 1;
+}
+
+body.ir-enabled.bt-toggles .listitem.bt-has-children.bt-collapsed > .line-div::before {
+    content: "▸";
+}
+
+body.ir-enabled.bt-toggles .listitem.bt-collapsed > .listitem,
+body.ir-enabled.bt-toggles .listitem.bt-collapsed .listitem {
+    display: none !important;
+}
+
+body.ir-enabled .listitem.bt-zoom-start-line > .line-div {
+    padding-left: 22px;
+    box-sizing: border-box;
+}
+body.ir-enabled.bt-toggles .listitem.bt-zoom-start-line > .line-div::before {
+    display: none !important;
+    content: none !important;
+    width: 0 !important;
+    margin: 0 !important;
+    margin-right: 0 !important;
+}
+body.ir-enabled.bt-bullets .listitem.bt-zoom-start-line > .line-div > .bt-bullet {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    padding: 0 !important;
+}
 `;
 
         // Write the palette for the current scheme as --ir-level-N root vars.
@@ -297,12 +439,17 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
             localStorage.setItem(ACTIVE_WIDTH_KEY, activeWidth);
             localStorage.setItem(OPACITY_KEY, currentOpacity);
             localStorage.setItem(ENABLED_KEY, isEnabled);
+            localStorage.setItem(THREADING_ENABLED_KEY, isThreadingEnabled);
             localStorage.setItem(THREADING_MODE_KEY, threadingMode);
+            localStorage.setItem(BULLETS_ENABLED_KEY, isBulletsEnabled);
+            localStorage.setItem(TOGGLES_ENABLED_KEY, isTogglesEnabled);
         };
 
         // Toggle the ir-enabled body class which gates all our CSS rules.
         const applyEnabledState = () => {
             document.body.classList.toggle('ir-enabled', isEnabled);
+            document.body.classList.toggle('bt-bullets', isEnabled && isBulletsEnabled);
+            document.body.classList.toggle('bt-toggles', isEnabled && isTogglesEnabled);
         };
 
         // Inject the static stylesheet once.
@@ -398,7 +545,7 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
             // --- READ PHASE --- (Avoid layout thrashing)
             const highlightData = [];
 
-            if (node && document.body.contains(node) && node.offsetParent !== null) {
+            if (isThreadingEnabled && node && document.body.contains(node) && node.offsetParent !== null) {
                 const parents = getParents(node);
 
                 if (parents.length > 0) {
@@ -556,6 +703,923 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
         setupCaretClassObserver();
 
         // =====================================================
+        // Workflowy-style Outline Enhancements
+        //   (1) Bullets on text items (CSS-driven)
+        //   (2) Disclosure carets + collapse/expand
+        // =====================================================
+
+        const EDITOR_SELECTORS = '.editor-wrapper, .page-content, #editor';
+        let outlineRafPending = false;
+
+        // Extract left margin used by Thymer to encode indentation.
+        const getItemIndent = (li) => {
+            if (!li) return 0;
+            const lineDiv = li.querySelector(':scope > .line-div, :scope > .line-check-div')
+                || li.querySelector('.line-div, .line-check-div');
+            if (lineDiv && lineDiv.style && lineDiv.style.marginLeft) {
+                return parseInt(lineDiv.style.marginLeft) || 0;
+            }
+            if (li.style && li.style.marginLeft) {
+                return parseInt(li.style.marginLeft) || 0;
+            }
+            return 0;
+        };
+
+        // Annotate every .listitem with `.bt-has-children` so CSS can show a
+        // disclosure caret on parents, and inject a clickable `.bt-bullet`
+        // span into every non-task .line-div so EVERY bullet (parent or leaf)
+        // is a real click target that can zoom. Supports both flat DOM
+        // (margin-left based) and nested DOM (listitem > listitem).
+        //
+        // Returns the fresh .listitem array so applyCollapseState can reuse
+        // it in the same RAF tick instead of re-querying.
+        const annotateHasChildren = () => {
+            const items = Array.from(document.querySelectorAll('.listitem'));
+            if (items.length === 0) return items;
+            if (!isEnabled) {
+                for (const li of items) {
+                    li.classList.remove('bt-has-children', 'bt-collapsed', 'bt-zoom-start-line');
+                    li.querySelectorAll('.bt-bullet').forEach(b => b.remove());
+                    if (li.style.display === 'none') li.style.display = '';
+                }
+                return items;
+            }
+            if (!isBulletsEnabled && !isTogglesEnabled) {
+                for (const li of items) {
+                    li.classList.remove('bt-has-children');
+                    li.querySelectorAll('.bt-bullet').forEach(b => b.remove());
+                }
+                return items;
+            }
+
+            const nestedDetected = items.some(li =>
+                li.querySelector(':scope > .listitem, :scope > * > .listitem')
+            );
+
+            for (let i = 0; i < items.length; i++) {
+                const li = items[i];
+                let hasChildren;
+
+                if (nestedDetected) {
+                    hasChildren = !!li.querySelector(
+                        ':scope > .listitem, :scope > * > .listitem'
+                    );
+                } else {
+                    const here = getItemIndent(li);
+                    const next = i + 1 < items.length ? getItemIndent(items[i + 1]) : here;
+                    hasChildren = next > here;
+                }
+
+                if (li.classList.contains('bt-has-children') !== hasChildren) {
+                    li.classList.toggle('bt-has-children', hasChildren);
+                }
+
+                // Task items keep their checkbox affordance — no bullet.
+                if (li.classList.contains('listitem-task')) continue;
+
+                const lineDiv = li.querySelector(':scope > .line-div')
+                    || li.querySelector('.line-div');
+                if (!lineDiv) continue;
+
+                const rowGuid = li.getAttribute('data-guid');
+                if (rowGuid && this.zoomStartLineGuids.has(rowGuid)) {
+                    li.classList.add('bt-zoom-start-line');
+                    const b = lineDiv.querySelector(':scope > .bt-bullet')
+                        || lineDiv.querySelector('.bt-bullet');
+                    if (b) b.remove();
+                    continue;
+                }
+
+                const existing = lineDiv.querySelector(':scope > .bt-bullet')
+                    || lineDiv.querySelector('.bt-bullet');
+                if (isBulletsEnabled) {
+                    if (!existing) {
+                        const bullet = document.createElement('span');
+                        bullet.className = 'bt-bullet';
+                        bullet.setAttribute('contenteditable', 'false');
+                        bullet.setAttribute('aria-hidden', 'true');
+                        lineDiv.insertBefore(bullet, lineDiv.firstChild);
+                    }
+                } else if (existing) {
+                    existing.remove();
+                }
+            }
+            return items;
+        };
+
+        // For flat DOM (what Thymer uses most of the time), hiding descendants
+        // of a collapsed item can't be expressed in CSS alone -- we walk the
+        // ordered item list and toggle display in one pass. Nested DOM is
+        // handled by CSS already, so this is cheap either way. Reuses the
+        // items array from annotateHasChildren when provided.
+        const applyCollapseState = (items) => {
+            if (!isEnabled || !isTogglesEnabled) return;
+
+            const list = items || Array.from(document.querySelectorAll('.listitem'));
+            let hideBelowIndent = null;
+
+            for (const li of list) {
+                const here = getItemIndent(li);
+
+                if (hideBelowIndent !== null && here > hideBelowIndent) {
+                    if (li.style.display !== 'none') li.style.display = 'none';
+                    continue;
+                }
+
+                hideBelowIndent = null;
+                if (li.style.display === 'none') {
+                    li.style.display = '';
+                }
+
+                if (li.classList.contains('bt-collapsed')) {
+                    hideBelowIndent = here;
+                }
+            }
+        };
+
+        // --- Bullet-click-to-zoom ----------------------------------------
+        // Resolve a Thymer line-item GUID from a DOM .listitem. Tries common
+        // data-* attributes first, then falls back to matching by document
+        // order against a flattened PluginRecord.getLineItems() tree.
+        const resolveLineItemGuid = async (li) => {
+            if (!li) return null;
+
+            const attrCandidates = [
+                'data-guid', 'data-lineitem-guid', 'data-line-item-guid',
+                'data-item-guid', 'data-id', 'id'
+            ];
+            for (const attr of attrCandidates) {
+                const val = li.getAttribute(attr);
+                if (val && val.length >= 12) return val;
+            }
+
+            try {
+                const panel = this.ui.getActivePanel && this.ui.getActivePanel();
+                const record = panel && panel.getActiveRecord
+                    ? panel.getActiveRecord()
+                    : null;
+                if (!record || typeof record.getLineItems !== 'function') return null;
+
+                const rootItems = await record.getLineItems();
+                if (!rootItems || rootItems.length === 0) return null;
+
+                const flatten = (items) => {
+                    const out = [];
+                    for (const item of items) {
+                        out.push(item);
+                        const kids = item.children;
+                        if (kids && kids.length) out.push(...flatten(kids));
+                    }
+                    return out;
+                };
+                const flat = flatten(rootItems);
+
+                const allDomItems = Array.from(document.querySelectorAll('.listitem'));
+                const idx = allDomItems.indexOf(li);
+                if (idx >= 0 && idx < flat.length && typeof flat[idx].getGuid === 'function') {
+                    return flat[idx].getGuid();
+                }
+            } catch (err) {
+                console.warn('[indent-rainbow] GUID resolution failed:', err);
+            }
+            return null;
+        };
+
+        const waitMs = (ms) => new Promise(r => setTimeout(r, ms));
+
+        const lineItemGuid = (it) => (it && typeof it.getGuid === 'function'
+            ? it.getGuid()
+            : it.guid);
+
+        const findLineItemByGuid = (items, g) => {
+            if (!items || !g) return null;
+            for (const it of items) {
+                if (lineItemGuid(it) === g) return it;
+                const ch = it.children;
+                if (ch && ch.length) {
+                    const found = findLineItemByGuid(ch, g);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+
+        /** Like findLineItemByGuid but loads children via getChildren() when .children is null. */
+        const findLineItemByGuidAsync = async (items, g) => {
+            if (!items || !g) return null;
+            const direct = findLineItemByGuid(items, g);
+            if (direct) return direct;
+            for (const it of items) {
+                let ch = it.children;
+                if (ch == null && typeof it.getChildren === 'function') {
+                    try {
+                        ch = await it.getChildren();
+                    } catch {
+                        ch = null;
+                    }
+                }
+                if (ch && ch.length) {
+                    const found = await findLineItemByGuidAsync(ch, g);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+
+        const syncLineZoomContext = () => {
+            const panel = this.ui.getActivePanel && this.ui.getActivePanel();
+            if (!panel || typeof panel.getNavigation !== 'function') {
+                this.lineZoomRootGuid = null;
+                return;
+            }
+            const nav = panel.getNavigation() || {};
+            const record = panel.getActiveRecord && panel.getActiveRecord();
+            const rg = record && typeof record.getGuid === 'function' ? record.getGuid() : null;
+            const rid = nav.rootId || null;
+            if (!rid || !rg) {
+                this.lineZoomRootGuid = null;
+                return;
+            }
+            // Line zoom: rootId is the zoomed line item, not the record document root.
+            this.lineZoomRootGuid = (rid !== rg) ? rid : null;
+        };
+
+        /**
+         * True if `lineGuid` is the zoom line or any descendant under it (walk up from line).
+         */
+        const isLineUnderZoomSubtree = async (record, lineGuid, zoomGuid) => {
+            if (!record || !lineGuid || !zoomGuid) return false;
+            if (lineGuid === zoomGuid) return true;
+            let roots;
+            try { roots = await record.getLineItems(); }
+            catch { return false; }
+            let cur = await findLineItemByGuidAsync(roots, lineGuid);
+            if (!cur) return false;
+            for (let depth = 0; depth < 500; depth++) {
+                const g = lineItemGuid(cur);
+                if (g === zoomGuid) return true;
+                const p = await cur.getParent();
+                if (!p) return false;
+                if (typeof p.getLineItems === 'function') return false;
+                cur = p;
+            }
+            return false;
+        };
+
+        const getDomLinePlainText = (li) => {
+            const lineDiv = li.querySelector(':scope > .line-div')
+                || li.querySelector('.line-div');
+            if (!lineDiv) return '';
+            const clone = lineDiv.cloneNode(true);
+            clone.querySelectorAll('.bt-bullet, .listitem-indentline').forEach(el => el.remove());
+            return clone.textContent
+                .replace(/\u200b/g, '')
+                .replace(/\u00a0/g, ' ')
+                .replace(/[\uFEFF\u2060]/g, '')
+                .trim();
+        };
+
+        const lineDomLooksEmpty = (li) => {
+            const t = getDomLinePlainText(li);
+            if (!t.length) return true;
+            const lower = t.toLowerCase();
+            if (lower === 'new line' || lower === 'type here' || lower === 'empty') return true;
+            return false;
+        };
+
+        const resolveRecordForIndent = (panel, pageRecordGuid) => {
+            let r = panel && typeof panel.getActiveRecord === 'function'
+                ? panel.getActiveRecord() : null;
+            if (r && typeof r.getLineItems === 'function') return r;
+
+            const freshPanel = this.ui.getActivePanel && this.ui.getActivePanel();
+            if (freshPanel && typeof freshPanel.getActiveRecord === 'function') {
+                r = freshPanel.getActiveRecord();
+                if (r && typeof r.getLineItems === 'function') return r;
+            }
+
+            if (pageRecordGuid && this.data && typeof this.data.getRecord === 'function') {
+                r = this.data.getRecord(pageRecordGuid);
+                if (r && typeof r.getLineItems === 'function') return r;
+            }
+
+            return null;
+        };
+
+        /** After zoom, "root" rows are often not margin-left 0 — use min indent in view. */
+        const getVisibleEditorListItems = () => {
+            const editor = document.querySelector(EDITOR_SELECTORS) || document.body;
+            return Array.from(editor.querySelectorAll('.listitem')).filter(
+                li => li.offsetParent !== null && li.style.display !== 'none'
+            );
+        };
+
+        const pickEmptyRootLineForZoom = (zoomGuid) => {
+            const visibleItems = getVisibleEditorListItems();
+            if (!visibleItems.length) return null;
+            const forZoomGuid = visibleItems.filter(
+                li => li.getAttribute('data-guid') === zoomGuid
+            );
+            if (forZoomGuid.length === 1 && lineDomLooksEmpty(forZoomGuid[0]) &&
+                !forZoomGuid[0].classList.contains('listitem-task')) {
+                return forZoomGuid[0];
+            }
+            const indents = visibleItems.map(li => getItemIndent(li));
+            const minIndent = Math.min(...indents);
+            const atRoot = visibleItems.filter(li =>
+                getItemIndent(li) === minIndent &&
+                !li.classList.contains('listitem-task')
+            );
+            if (!atRoot.length) return null;
+            const matchZoom = atRoot.find(
+                li => li.getAttribute('data-guid') === zoomGuid
+            );
+            const firstRoot = matchZoom || atRoot[0];
+            if (!lineDomLooksEmpty(firstRoot)) return null;
+            return firstRoot;
+        };
+
+        const dispatchEditorKey = (key) => {
+            const keyCode = key === 'Tab' ? 9 : (key === 'Home' ? 36 : 0);
+            if (!keyCode) return;
+            const code = key === 'Tab' ? 'Tab' : 'Home';
+            const mk = (type) => new KeyboardEvent(type, {
+                key,
+                code,
+                keyCode,
+                which: keyCode,
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                view: window
+            });
+            const targets = [
+                document.getElementById('virtualinput-wrapper'),
+                document.getElementById('editor-meta'),
+                document.getElementById('editor'),
+                document.activeElement,
+                window,
+                document,
+                document.body
+            ].filter(Boolean);
+            for (const t of targets) {
+                try {
+                    t.dispatchEvent(mk('keydown'));
+                    t.dispatchEvent(mk('keyup'));
+                } catch (_) { /* ignore */ }
+            }
+        };
+
+        const syncNavToItem = async (p, itemGuid) => {
+            const r = p.navigateTo({ itemGuid: itemGuid, highlight: true });
+            if (r && typeof r.then === 'function') await r;
+            if (typeof this.ui.setActivePanel === 'function') {
+                try { this.ui.setActivePanel(p); } catch (_) { /* ignore */ }
+            }
+        };
+
+        /** Mark the line opened for first edit after empty zoom: no bullet, inset text. */
+        const applyZoomStartLineStyle = (itemGuid) => {
+            if (!itemGuid) return;
+            this.zoomStartLineGuids.add(itemGuid);
+            const bumpOutline = () => {
+                setTimeout(() => {
+                    try {
+                        if (typeof scheduleOutlineUpdate === 'function') {
+                            scheduleOutlineUpdate();
+                        }
+                    } catch (_) { /* ignore */ }
+                }, 0);
+            };
+            const mark = () => {
+                const li = Array.from(document.querySelectorAll('.listitem')).find(
+                    (n) => n.getAttribute('data-guid') === itemGuid
+                );
+                if (li) li.classList.add('bt-zoom-start-line');
+            };
+            mark();
+            bumpOutline();
+            requestAnimationFrame(() => { mark(); bumpOutline(); });
+            setTimeout(() => { mark(); bumpOutline(); }, 0);
+            setTimeout(() => { mark(); bumpOutline(); }, 120);
+            setTimeout(() => { mark(); bumpOutline(); }, 400);
+            setTimeout(() => { mark(); bumpOutline(); }, 900);
+        };
+
+        /**
+         * After a successful zoom into an empty node, ensure the cursor lands
+         * on an indented child line beneath the zoomed item.
+         *
+         * Strategy (in priority order):
+         *  1. If the zoom target already has children → navigate to the first child.
+         *  2. Find a different empty root-level DOM line and move() it under the zoom target.
+         *  3. Create a child via PluginRecord APIs only (createLineItem with full args,
+         *     then insertFromPlainText / insertFromMarkdown with tree growth checks).
+         *
+         * execCommand / synthetic Tab are not used: Thymer ignores untrusted input and
+         * the host editor is not a classic contenteditable indent target.
+         *
+         * Each strategy is attempted across multiple retries to handle Thymer's
+         * async painting/hydration delays.
+         */
+        const indentEmptyZoomViaApi = async (panel, zoomGuid, pageRecordGuid) => {
+            const DBG = '[indent-rainbow][zoom-indent]';
+
+            const childCountForGuid = async (rec, g) => {
+                if (!rec || !g) return -1;
+                let roots;
+                try { roots = await rec.getLineItems(); }
+                catch { return -1; }
+                const z = await findLineItemByGuidAsync(roots, g);
+                if (!z) return -1;
+                let ch = z.children;
+                if (ch == null && typeof z.getChildren === 'function') {
+                    try { ch = await z.getChildren(); } catch { ch = null; }
+                }
+                return ch ? ch.length : 0;
+            };
+
+            const lastChildGuidForZoom = async (rec, g) => {
+                let roots;
+                try { roots = await rec.getLineItems(); }
+                catch { return null; }
+                const z = await findLineItemByGuidAsync(roots, g);
+                if (!z) return null;
+                let ch = z.children;
+                if (ch == null && typeof z.getChildren === 'function') {
+                    try { ch = await z.getChildren(); } catch { ch = null; }
+                }
+                if (!ch || !ch.length) return null;
+                return lineItemGuid(ch[ch.length - 1]);
+            };
+
+            /**
+             * Structural "indent" in Thymer = parent/child in the line-item tree.
+             * createLineItem(parent, after, type, segments, properties) must use all
+             * five parameters; insert* returns boolean — detect new children by count.
+             */
+            const tryCreateChildUnderZoom = async (record, zoomItem, zGuid) => {
+                const emptySeg = [{ type: 'text', text: '' }];
+                if (typeof record.createLineItem === 'function') {
+                    let r0;
+                    try { r0 = await record.getLineItems(); } catch { r0 = null; }
+                    const parentLatest = r0
+                        ? (await findLineItemByGuidAsync(r0, zGuid) || zoomItem)
+                        : zoomItem;
+                    const creators = [
+                        () => record.createLineItem(parentLatest, null, 'text', null, null),
+                        () => record.createLineItem(parentLatest, null, 'text', emptySeg, null),
+                        () => record.createLineItem(parentLatest, null, 'empty', null, null),
+                    ];
+                    for (const c of creators) {
+                        try {
+                            const created = await c();
+                            if (created != null) {
+                                const ng = lineItemGuid(created);
+                                if (ng) return ng;
+                            }
+                        } catch (e) {
+                            console.debug(`${DBG} createLineItem variant failed`, e);
+                        }
+                    }
+                }
+
+                const insertSteps = [];
+                if (typeof record.insertFromPlainText === 'function') {
+                    insertSteps.push((p) => record.insertFromPlainText('', p, null));
+                    insertSteps.push((p) => record.insertFromPlainText('\n', p, null));
+                    insertSteps.push((p) => record.insertFromPlainText(' ', p, null));
+                }
+                if (typeof record.insertFromMarkdown === 'function') {
+                    insertSteps.push((p) => record.insertFromMarkdown('- ', p, null));
+                    insertSteps.push((p) => record.insertFromMarkdown('* ', p, null));
+                }
+                for (const step of insertSteps) {
+                    try {
+                        let r2;
+                        try { r2 = await record.getLineItems(); }
+                        catch { continue; }
+                        const parent = await findLineItemByGuidAsync(r2, zGuid) || zoomItem;
+                        const n0 = await childCountForGuid(record, zGuid);
+                        if (n0 < 0) continue;
+                        const ok = await step(parent);
+                        if (ok === false) continue;
+                        await waitMs(280);
+                        const n1 = await childCountForGuid(record, zGuid);
+                        if (n1 > n0) {
+                            const g = await lastChildGuidForZoom(record, zGuid);
+                            if (g) return g;
+                        }
+                    } catch (e) {
+                        console.debug(`${DBG} insert* variant failed`, e);
+                    }
+                }
+                return null;
+            };
+
+            for (let attempt = 0; attempt < 8; attempt++) {
+                if (attempt > 0) await waitMs(350);
+
+                // --- Resolve record ------------------------------------------
+                let record = resolveRecordForIndent(panel, pageRecordGuid);
+                if (!record) {
+                    // Panel may still be transitioning — try harder
+                    await waitMs(300);
+                    record = resolveRecordForIndent(panel, pageRecordGuid);
+                }
+                if (!record || typeof record.getLineItems !== 'function') {
+                    console.debug(`${DBG} attempt ${attempt}: no record`);
+                    continue;
+                }
+
+                // --- Get fresh root items ------------------------------------
+                let roots;
+                try { roots = await record.getLineItems(); }
+                catch (e) { console.debug(`${DBG} attempt ${attempt}: getLineItems threw`, e); continue; }
+                if (!roots || !roots.length) {
+                    console.debug(`${DBG} attempt ${attempt}: empty roots`);
+                    continue;
+                }
+
+                // --- Find zoom target in tree --------------------------------
+                let zoomItem = await findLineItemByGuidAsync(roots, zoomGuid);
+                if (!zoomItem) {
+                    console.debug(`${DBG} attempt ${attempt}: zoom item ${zoomGuid} not in tree`);
+                    continue;
+                }
+
+                // --- 1. Does it already have children? -----------------------
+                let children = zoomItem.children;
+                if (children == null && typeof zoomItem.getChildren === 'function') {
+                    try { children = await zoomItem.getChildren(); } catch { children = null; }
+                }
+                if (children && children.length > 0) {
+                    const firstGuid = lineItemGuid(children[0]);
+                    console.debug(`${DBG} zoom target already has children, nav to ${firstGuid}`);
+                    if (firstGuid) {
+                        await syncNavToItem(panel, firstGuid);
+                        await waitMs(60);
+                        dispatchEditorKey('Home');
+                        applyZoomStartLineStyle(firstGuid);
+                        return true;
+                    }
+                }
+
+                // --- 2. move(): empty root line that is NOT the zoom row → under zoom target
+                const emptyRootForMove = pickEmptyRootLineForZoom(zoomGuid);
+                if (emptyRootForMove) {
+                    const domGuid = emptyRootForMove.getAttribute('data-guid');
+                    if (domGuid && domGuid !== zoomGuid) {
+                        try {
+                            try { roots = await record.getLineItems(); }
+                            catch { /* keep roots */ }
+
+                            let lineToMove = await findLineItemByGuidAsync(roots, domGuid);
+                            let zoomRef = await findLineItemByGuidAsync(roots, zoomGuid);
+                            if (lineToMove && zoomRef && typeof lineToMove.move === 'function') {
+                                const moved = await lineToMove.move(zoomRef, null);
+                                if (moved != null) {
+                                    await waitMs(120);
+                                    await syncNavToItem(panel, domGuid);
+                                    await waitMs(60);
+                                    dispatchEditorKey('Home');
+                                    applyZoomStartLineStyle(domGuid);
+                                    return true;
+                                }
+                                if (typeof lineToMove.getParent === 'function') {
+                                    const parent = await lineToMove.getParent();
+                                    if (parent && lineItemGuid(parent) === zoomGuid) {
+                                        await syncNavToItem(panel, domGuid);
+                                        await waitMs(60);
+                                        dispatchEditorKey('Home');
+                                        applyZoomStartLineStyle(domGuid);
+                                        return true;
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.debug(`${DBG} attempt ${attempt}: move() failed:`, e);
+                        }
+                    }
+                }
+
+                // --- 3. Create a child under the zoom target (record API only) ---
+                try {
+                    const newGuid = await tryCreateChildUnderZoom(record, zoomItem, zoomGuid);
+                    if (newGuid) {
+                        console.debug(`${DBG} new child under zoom ${newGuid}`);
+                        await waitMs(150);
+                        await syncNavToItem(panel, newGuid);
+                        await waitMs(60);
+                        dispatchEditorKey('Home');
+                        applyZoomStartLineStyle(newGuid);
+                        return true;
+                    }
+                } catch (e) {
+                    console.debug(`${DBG} attempt ${attempt}: tryCreateChildUnderZoom failed:`, e);
+                }
+            }
+
+            console.debug(`${DBG} all API attempts exhausted`);
+            return false;
+        };
+
+        /**
+         * Orchestrator: called after a zoom navigation completes.
+         * Indentation is done only via PluginRecord / PluginLineItem APIs (see indentEmptyZoomViaApi).
+         */
+        const maybeIndentEmptyZoomedLine = async (panel, zoomGuid, pageRecordGuid) => {
+            const DBG = '[indent-rainbow][zoom-indent]';
+
+            // Wait for Thymer to finish painting the zoomed view.
+            // Use an escalating wait: check the DOM periodically rather than
+            // a single fixed delay, so we react as soon as the editor settles.
+            let domReady = false;
+            for (let wait = 0; wait < 6; wait++) {
+                await waitMs(wait === 0 ? 400 : 250);
+                const items = getVisibleEditorListItems();
+                if (items.length > 0) { domReady = true; break; }
+            }
+            if (!domReady) {
+                console.debug(`${DBG} DOM never populated after zoom`);
+                return;
+            }
+
+            if (await indentEmptyZoomViaApi(panel, zoomGuid, pageRecordGuid)) return;
+
+            console.debug(`${DBG} API could not create a nested line; DOM Tab/execCommand unavailable`);
+            if (this.ui && typeof this.ui.showToaster === 'function') {
+                this.ui.showToaster({
+                    message: 'Could not add a nested line automatically — use Tab in the editor to indent.',
+                    type: 'warning',
+                    duration: 3200
+                });
+            }
+        };
+
+        // Workflowy-style zoom: navigate to the record root first (un-zooming
+        // if already zoomed somewhere), wait for the record to hydrate, then
+        // navigate with the line-item guid as rootId. The setActivePanel call
+        // after each navigateTo is what actually flips the rendered view —
+        // navigateTo alone updates nav state silently.
+        const zoomToItem = async (li) => {
+            const guid = li.getAttribute('data-guid') || await resolveLineItemGuid(li);
+            if (!guid) {
+                this.ui.showToaster({
+                    message: 'Could not resolve item to zoom into',
+                    type: 'warning',
+                    duration: 1500
+                });
+                return;
+            }
+
+            const panel = this.ui.getActivePanel && this.ui.getActivePanel();
+            if (!panel || typeof panel.navigateTo !== 'function') return;
+
+            const currentNav = (typeof panel.getNavigation === 'function'
+                ? panel.getNavigation()
+                : null) || {};
+
+            const record = panel.getActiveRecord && panel.getActiveRecord();
+            const recordGuid = (record && typeof record.getGuid === 'function'
+                ? record.getGuid()
+                : null) || currentNav.rootId || null;
+            const pageRecordGuid = record && typeof record.getGuid === 'function'
+                ? record.getGuid()
+                : null;
+            const workspaceGuid = currentNav.workspaceGuid
+                || (typeof this.getWorkspaceGuid === 'function'
+                    ? this.getWorkspaceGuid()
+                    : null);
+
+            if (!recordGuid) return;
+
+            const type = currentNav.type || 'edit_panel';
+            const doNav = async (p, nav) => {
+                const r = p.navigateTo(nav);
+                if (r && typeof r.then === 'function') await r;
+                if (typeof this.ui.setActivePanel === 'function') {
+                    try { this.ui.setActivePanel(p); } catch (_) { /* ignore */ }
+                }
+            };
+
+            try {
+                if (currentNav.rootId !== recordGuid) {
+                    await doNav(panel, { type, rootId: recordGuid, workspaceGuid });
+                    await waitMs(350);
+                }
+
+                await doNav(panel, { type, rootId: guid, workspaceGuid });
+                await waitMs(50);
+                syncLineZoomContext();
+                const afterZoom = typeof panel.getNavigation === 'function'
+                    ? panel.getNavigation() : {};
+                if (afterZoom && afterZoom.rootId === guid) {
+                    void maybeIndentEmptyZoomedLine(panel, guid, pageRecordGuid);
+                    return;
+                }
+
+                // Fallback: scroll+highlight within the record.
+                await doNav(panel, { itemGuid: guid, highlight: true });
+            } catch (err) {
+                console.warn('[indent-rainbow] zoom failed:', err);
+            }
+        };
+
+        // Unified click handler: bullet span → zoom; caret zone → toggle.
+        // Capture phase, one pass, so we don't rely on stopImmediatePropagation
+        // to coordinate between two handlers.
+        const outlineClickHandler = (e) => {
+            if (!isEnabled) return;
+            const target = e.target;
+            if (!target) return;
+
+            if (isBulletsEnabled) {
+                const bullet = target.closest?.('.bt-bullet');
+                if (bullet) {
+                    const li = bullet.closest('.listitem');
+                    if (li) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        zoomToItem(li);
+                        return;
+                    }
+                }
+            }
+
+            if (isTogglesEnabled) {
+                const lineDiv = target.closest?.('.line-div');
+                if (!lineDiv) return;
+
+                const li = lineDiv.closest('.listitem');
+                if (!li || !li.classList.contains('bt-has-children')) return;
+
+                const rect = lineDiv.getBoundingClientRect();
+                const relX = e.clientX - rect.left;
+                if (relX < 0 || relX > 24) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+                li.classList.toggle('bt-collapsed');
+                applyCollapseState();
+            }
+        };
+
+        const updateOutlineEnhancements = () => {
+            outlineRafPending = false;
+            const items = annotateHasChildren();
+            applyCollapseState(items);
+        };
+
+        const scheduleOutlineUpdate = () => {
+            if (outlineRafPending) return;
+            outlineRafPending = true;
+            requestAnimationFrame(updateOutlineEnhancements);
+        };
+
+        // Observe the editor subtree for structural changes and re-run the
+        // pass. Filter mutations aggressively in the callback — the editor
+        // hosts #virtualinput-wrapper whose inline style is rewritten on every
+        // keystroke, so a naive observer reschedules the outline update
+        // hundreds of times per second during typing.
+        const setupOutlineObserver = () => {
+            const target =
+                document.querySelector(EDITOR_SELECTORS) || document.body;
+
+            const isListItem = (n) =>
+                n && n.nodeType === 1 &&
+                (n.classList?.contains('listitem') || n.querySelector?.('.listitem'));
+
+            const observer = new MutationObserver((mutations) => {
+                for (const m of mutations) {
+                    if (m.type === 'childList') {
+                        for (const n of m.addedNodes) {
+                            if (isListItem(n)) { scheduleOutlineUpdate(); return; }
+                        }
+                        for (const n of m.removedNodes) {
+                            if (isListItem(n)) { scheduleOutlineUpdate(); return; }
+                        }
+                    } else if (m.type === 'attributes' && m.attributeName === 'style') {
+                        const t = m.target;
+                        if (t.classList?.contains('line-div') ||
+                            t.classList?.contains('line-check-div')) {
+                            scheduleOutlineUpdate();
+                            return;
+                        }
+                    }
+                }
+            });
+            observer.observe(target, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['style']
+            });
+            this.cleanupMethods.push(() => observer.disconnect());
+
+            // Initial pass shortly after mount (Thymer may still be painting).
+            scheduleOutlineUpdate();
+            setTimeout(scheduleOutlineUpdate, 250);
+            setTimeout(scheduleOutlineUpdate, 1000);
+        };
+
+        setupOutlineObserver();
+
+        // Zoom: reparent lines created outside the zoom subtree so they become children of the zoom root.
+        const handleLineItemCreatedForZoom = async (ev) => {
+            if (!ev || ev.eventName !== 'lineitem.created') return;
+            if (this._zoomReparentBusy) return;
+            const zoomGuid = this.lineZoomRootGuid;
+            if (!zoomGuid) return;
+
+            const newGuid = ev.lineItemGuid;
+            if (!newGuid || newGuid === zoomGuid) return;
+
+            const panel = this.ui.getActivePanel && this.ui.getActivePanel();
+            const record = panel && panel.getActiveRecord && panel.getActiveRecord();
+            if (!record || typeof record.getLineItems !== 'function') return;
+            if (ev.recordGuid && typeof record.getGuid === 'function'
+                && record.getGuid() !== ev.recordGuid) return;
+
+            const parentGuid = ev.parentGuid != null ? ev.parentGuid : null;
+            if (parentGuid) {
+                const under = await isLineUnderZoomSubtree(record, parentGuid, zoomGuid);
+                if (under) return;
+            }
+
+            let roots;
+            try { roots = await record.getLineItems(); }
+            catch { return; }
+
+            let zoomItem = await findLineItemByGuidAsync(roots, zoomGuid);
+            if (!zoomItem) return;
+
+            let newItem = await findLineItemByGuidAsync(roots, newGuid);
+            if (!newItem && typeof ev.getLineItem === 'function') {
+                try { newItem = await ev.getLineItem(); } catch { newItem = null; }
+            }
+            if (!newItem || typeof newItem.move !== 'function') return;
+
+            this._zoomReparentBusy = true;
+            try {
+                let ch = zoomItem.children;
+                if (ch == null && typeof zoomItem.getChildren === 'function') {
+                    try { ch = await zoomItem.getChildren(); } catch { ch = null; }
+                }
+                const list = ch || [];
+                const siblingsExcludingNew = list.filter((c) => lineItemGuid(c) !== newGuid);
+                const afterItem = siblingsExcludingNew.length
+                    ? siblingsExcludingNew[siblingsExcludingNew.length - 1]
+                    : null;
+                await newItem.move(zoomItem, afterItem);
+            } catch (e) {
+                console.debug('[indent-rainbow][zoom-reparent] move failed:', e);
+            } finally {
+                this._zoomReparentBusy = false;
+            }
+        };
+
+        // New record / fresh panel: one visible empty root line — hide bullet like zoom-start.
+        if (this.events && typeof this.events.on === 'function') {
+            let newRecordNavTimer = null;
+            const onPanelNavigated = () => {
+                syncLineZoomContext();
+                if (newRecordNavTimer) clearTimeout(newRecordNavTimer);
+                newRecordNavTimer = setTimeout(() => {
+                    newRecordNavTimer = null;
+                    const items = getVisibleEditorListItems();
+                    if (items.length !== 1) return;
+                    const only = items[0];
+                    if (only.classList.contains('listitem-task')) return;
+                    if (!lineDomLooksEmpty(only)) return;
+                    const g = only.getAttribute('data-guid');
+                    if (g) applyZoomStartLineStyle(g);
+                }, 550);
+            };
+            const panelNavId = this.events.on('panel.navigated', onPanelNavigated);
+            const lineCreatedId = this.events.on('lineitem.created', (ev) => {
+                void handleLineItemCreatedForZoom(ev);
+            }, { collection: '*' });
+            this.cleanupMethods.push(() => {
+                if (newRecordNavTimer) clearTimeout(newRecordNavTimer);
+                try {
+                    this.events.off(panelNavId);
+                } catch (_) { /* ignore */ }
+                try {
+                    this.events.off(lineCreatedId);
+                } catch (_) { /* ignore */ }
+            });
+        }
+
+        syncLineZoomContext();
+
+        // Single click hook in capture phase so we beat Thymer's own handlers.
+        document.addEventListener('click', outlineClickHandler, true);
+        this.cleanupMethods.push(() => {
+            document.removeEventListener('click', outlineClickHandler, true);
+        });
+
+        // =====================================================
         // JS-driven coloring — all item types via --ir-color var
         // =====================================================
 
@@ -568,7 +1632,9 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
             const lineDiv = item.querySelector('.line-div');
             const isEmpty = lineDiv
                 ? !Array.from(lineDiv.childNodes).some(n =>
-                    !(n.nodeType === 1 && (n.classList?.contains('listitem-indentline') || n.classList?.contains('bt-active-highlight')))
+                    !(n.nodeType === 1 && (n.classList?.contains('listitem-indentline')
+                        || n.classList?.contains('bt-active-highlight')
+                        || n.classList?.contains('bt-bullet')))
                     && (n.textContent || '').trim().length > 0
                   )
                 : !(item.textContent || '').trim();
@@ -689,16 +1755,30 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
             if (newSettings.activeWidth !== undefined) activeWidth = parseInt(newSettings.activeWidth);
             if (newSettings.currentOpacity !== undefined) currentOpacity = parseFloat(newSettings.currentOpacity);
             if (newSettings.isEnabled !== undefined) isEnabled = newSettings.isEnabled;
+            if (newSettings.isThreadingEnabled !== undefined) isThreadingEnabled = newSettings.isThreadingEnabled;
             if (newSettings.threadingMode !== undefined) threadingMode = newSettings.threadingMode;
+            if (newSettings.isBulletsEnabled !== undefined) isBulletsEnabled = newSettings.isBulletsEnabled;
+            if (newSettings.isTogglesEnabled !== undefined) isTogglesEnabled = newSettings.isTogglesEnabled;
             if (newSettings.currentScheme !== undefined) applySchemeVars(currentScheme);
             applySettingVars();
             applyEnabledState();
             saveSettings();
+            if (!isEnabled) this.lineZoomRootGuid = null;
+            if (newSettings.isTogglesEnabled !== undefined && !newSettings.isTogglesEnabled) {
+                document.querySelectorAll('.listitem.bt-collapsed').forEach(el => {
+                    el.classList.remove('bt-collapsed');
+                });
+                document.querySelectorAll('.listitem[style*="display: none"]').forEach(el => {
+                    el.style.display = '';
+                });
+            }
             if (isEnabled) {
                 scheduleListColorUpdate(null);
             } else {
                 clearListColors();
             }
+            scheduleOutlineUpdate();
+            scheduleUpdate(null);
             if (statusBarItem && typeof statusBarItem.setTooltip === 'function') {
                 statusBarItem.setTooltip(`Indent Rainbow – ${colorSchemes[currentScheme]?.name ?? currentScheme}`);
             }
@@ -708,7 +1788,10 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
         this.ui.registerCustomPanelType("indent-rainbow-settings", (panel) => {
             this.renderSettingsUI(panel, {
                 colorSchemes, opacityPresets,
-                getSettings: () => ({ currentScheme, currentWidth, activeWidth, currentOpacity, isEnabled, threadingMode }),
+                getSettings: () => ({
+                    currentScheme, currentWidth, activeWidth, currentOpacity, isEnabled,
+                    isThreadingEnabled, threadingMode, isBulletsEnabled, isTogglesEnabled
+                }),
                 updateSettings,
                 createIcon: (name) => this.ui.createIcon(name)
             });
@@ -738,6 +1821,110 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
             }
         });
 
+        const paletteRefresh = () => {
+            applySchemeVars(currentScheme);
+            applySettingVars();
+            applyEnabledState();
+            saveSettings();
+            if (isEnabled) scheduleListColorUpdate(null);
+            else clearListColors();
+            scheduleOutlineUpdate();
+            scheduleUpdate(null);
+        };
+
+        this.ui.addCommandPaletteCommand({
+            label: 'Indent Rainbow: Toggle On/Off',
+            icon: 'toggle-left',
+            onSelected: () => {
+                isEnabled = !isEnabled;
+                saveSettings();
+                paletteRefresh();
+                if (this.ui.showToaster) {
+                    this.ui.showToaster({
+                        message: `Indent Rainbow ${isEnabled ? 'enabled' : 'disabled'}`,
+                        type: 'success',
+                        duration: 1500
+                    });
+                }
+            }
+        });
+
+        this.ui.addCommandPaletteCommand({
+            label: 'Indent Rainbow: Toggle Active Threading',
+            icon: 'target',
+            onSelected: () => {
+                isThreadingEnabled = !isThreadingEnabled;
+                saveSettings();
+                paletteRefresh();
+                if (this.ui.showToaster) {
+                    this.ui.showToaster({
+                        message: `Active thread highlighting ${isThreadingEnabled ? 'enabled' : 'disabled'}`,
+                        type: 'success',
+                        duration: 1500
+                    });
+                }
+            }
+        });
+
+        this.ui.addCommandPaletteCommand({
+            label: 'Indent Rainbow: Toggle Threading Style (Staircase/Stretched)',
+            icon: 'layout-list',
+            onSelected: () => {
+                threadingMode = threadingMode === 'staircase' ? 'stretched' : 'staircase';
+                saveSettings();
+                paletteRefresh();
+                if (this.ui.showToaster) {
+                    this.ui.showToaster({
+                        message: `Threading style: ${threadingMode}`,
+                        type: 'success',
+                        duration: 1500
+                    });
+                }
+            }
+        });
+
+        this.ui.addCommandPaletteCommand({
+            label: 'Indent Rainbow: Toggle Bullets',
+            icon: 'circle-dot',
+            onSelected: () => {
+                isBulletsEnabled = !isBulletsEnabled;
+                saveSettings();
+                paletteRefresh();
+                if (this.ui.showToaster) {
+                    this.ui.showToaster({
+                        message: `Bullets ${isBulletsEnabled ? 'enabled' : 'disabled'}`,
+                        type: 'success',
+                        duration: 1500
+                    });
+                }
+            }
+        });
+
+        this.ui.addCommandPaletteCommand({
+            label: 'Indent Rainbow: Toggle Disclosure Carets',
+            icon: 'chevron-down',
+            onSelected: () => {
+                isTogglesEnabled = !isTogglesEnabled;
+                if (!isTogglesEnabled) {
+                    document.querySelectorAll('.listitem.bt-collapsed').forEach(el => {
+                        el.classList.remove('bt-collapsed');
+                    });
+                    document.querySelectorAll('.listitem[style*="display: none"]').forEach(el => {
+                        el.style.display = '';
+                    });
+                }
+                saveSettings();
+                paletteRefresh();
+                if (this.ui.showToaster) {
+                    this.ui.showToaster({
+                        message: `Disclosure carets ${isTogglesEnabled ? 'enabled' : 'disabled'}`,
+                        type: 'success',
+                        duration: 1500
+                    });
+                }
+            }
+        });
+
     }
 
     onUnload() {
@@ -754,7 +1941,23 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
 
         document.querySelectorAll('.bt-active-highlight').forEach(el => el.remove());
         document.querySelectorAll('.bt-focused').forEach(el => el.classList.remove('bt-focused'));
-        document.body.classList.remove('ir-enabled');
+        document.querySelectorAll('.bt-bullet').forEach(el => el.remove());
+        document.querySelectorAll('.bt-has-children').forEach(el => {
+            el.classList.remove('bt-has-children');
+        });
+        document.querySelectorAll('.bt-collapsed').forEach(el => {
+            el.classList.remove('bt-collapsed');
+        });
+        document.querySelectorAll('.bt-zoom-start-line').forEach(el => {
+            el.classList.remove('bt-zoom-start-line');
+        });
+        if (this.zoomStartLineGuids) this.zoomStartLineGuids.clear();
+        this.lineZoomRootGuid = null;
+        this._zoomReparentBusy = false;
+        document.querySelectorAll('.listitem').forEach(el => {
+            if (el.style.display === 'none') el.style.display = '';
+        });
+        document.body.classList.remove('ir-enabled', 'bt-bullets', 'bt-toggles');
 
         if (this.styleElement) {
             this.styleElement.remove();
@@ -1085,7 +2288,11 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
         const formatWidthValue = (value) => value === 0 ? 'Hidden' : `${value}px`;
 
         // Shared local settings state — mutated by every control, drives renderPreview
-        const currentSettings = Object.assign({}, settings);
+        const currentSettings = Object.assign({
+            isThreadingEnabled: true,
+            isBulletsEnabled: true,
+            isTogglesEnabled: true
+        }, settings);
 
         // -------------------------------------------------------
         // Live preview
@@ -1149,7 +2356,7 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
 
             // Draw active threading arm(s) from row 0/1/2 down to row 3
             const activeWidth = Math.max(0, parseInt(s.activeWidth, 10));
-            if (activeWidth > 0) {
+            if (activeWidth > 0 && s.isThreadingEnabled !== false) {
                 const deepIdx = PREVIEW_ROWS - 1;
                 const deepTop = deepIdx * ROW_H + Math.floor((116 - PREVIEW_ROWS * ROW_H) / 2);
                 const deepLeft = deepIdx * INDENT_STEP + BASE_LEFT;
@@ -1204,6 +2411,17 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
         genCopy.className = 'ir-card-copy';
         genCopy.textContent = 'Set the overall look of the guide rails shown throughout the editor.';
         genCard.appendChild(genCopy);
+
+        const pluginEnCheckbox = document.createElement('input');
+        pluginEnCheckbox.type = 'checkbox';
+        pluginEnCheckbox.className = 'ir-checkbox';
+        pluginEnCheckbox.checked = currentSettings.isEnabled !== false;
+        pluginEnCheckbox.addEventListener('change', (e) => {
+            currentSettings.isEnabled = e.target.checked;
+            api.updateSettings({ isEnabled: e.target.checked });
+            renderPreview(currentSettings);
+        });
+        genCard.appendChild(createField('Enable plugin', 'Master switch for indent guides and outline features.', pluginEnCheckbox));
 
         // Scheme Select
         const schemeSelect = document.createElement('select');
@@ -1286,6 +2504,17 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
         threadCopy.textContent = 'Control how the currently focused path is emphasized while you navigate through nested content.';
         threadCard.appendChild(threadCopy);
 
+        const threadEnCheckbox = document.createElement('input');
+        threadEnCheckbox.type = 'checkbox';
+        threadEnCheckbox.className = 'ir-checkbox';
+        threadEnCheckbox.checked = currentSettings.isThreadingEnabled !== false;
+        threadEnCheckbox.addEventListener('change', (e) => {
+            currentSettings.isThreadingEnabled = e.target.checked;
+            api.updateSettings({ isThreadingEnabled: e.target.checked });
+            renderPreview(currentSettings);
+        });
+        threadCard.appendChild(createField('Active thread highlights', 'Draw emphasized connectors from ancestor guides to the line that contains the caret.', threadEnCheckbox));
+
         // Threading Style Select
         const threadStyleSelect = document.createElement('select');
         threadStyleSelect.className = 'ir-input cursor-pointer';
@@ -1336,6 +2565,47 @@ body.ir-enabled [data-theme="dark"] .listitem-indentline {
         threadCard.appendChild(createField('Active Thread Width', 'Set how strongly the currently focused hierarchy path stands out.', aWidthGroup, null, 'ir-slider-control'));
 
         container.appendChild(threadCard);
+
+        const outlineCard = document.createElement('div');
+        outlineCard.className = 'ir-card';
+        const outlineTitle = document.createElement('h3');
+        outlineTitle.appendChild(api.createIcon('layout-list'));
+        outlineTitle.appendChild(document.createTextNode(' Outline & zoom'));
+        outlineCard.appendChild(outlineTitle);
+        const outlineCopy = document.createElement('p');
+        outlineCopy.className = 'ir-card-copy';
+        outlineCopy.textContent = 'Workflowy-style bullets (click to zoom into a subtree), disclosure carets, and automatic reparenting of new lines while zoomed.';
+        outlineCard.appendChild(outlineCopy);
+
+        const bulletsCheckbox = document.createElement('input');
+        bulletsCheckbox.type = 'checkbox';
+        bulletsCheckbox.className = 'ir-checkbox';
+        bulletsCheckbox.checked = currentSettings.isBulletsEnabled !== false;
+        bulletsCheckbox.addEventListener('change', (e) => {
+            currentSettings.isBulletsEnabled = e.target.checked;
+            api.updateSettings({ isBulletsEnabled: e.target.checked });
+        });
+        outlineCard.appendChild(createField('Bullets', 'Show a clickable bullet before each line; click to zoom that item as the outline root.', bulletsCheckbox));
+
+        const togglesCheckbox = document.createElement('input');
+        togglesCheckbox.type = 'checkbox';
+        togglesCheckbox.className = 'ir-checkbox';
+        togglesCheckbox.checked = currentSettings.isTogglesEnabled !== false;
+        togglesCheckbox.addEventListener('change', (e) => {
+            currentSettings.isTogglesEnabled = e.target.checked;
+            if (!e.target.checked) {
+                document.querySelectorAll('.listitem.bt-collapsed').forEach(el => {
+                    el.classList.remove('bt-collapsed');
+                });
+                document.querySelectorAll('.listitem[style*="display: none"]').forEach(el => {
+                    el.style.display = '';
+                });
+            }
+            api.updateSettings({ isTogglesEnabled: e.target.checked });
+        });
+        outlineCard.appendChild(createField('Disclosure carets', 'Collapse or expand nested rows from the caret zone to the left of the bullet.', togglesCheckbox));
+
+        container.appendChild(outlineCard);
         element.appendChild(container);
     }
 }

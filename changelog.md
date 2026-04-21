@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.1
+
+### Bullets (disclosure carets off)
+
+- With **Disclosure carets** disabled and **Bullets** still enabled, parent rows no longer switch to hollow ring bullets while leaves stay filled (that mismatch looked like a bug).
+- Parents now keep the **same filled dot** as leaves and are indicated **subtly** with lower rest opacity; **hover** still brings them up to the same strength as other bullets.
+
+### Manifest
+
+- `plugin.json`: version **1.4.1**.
+
 ## 1.4.0
 
 ### Architecture (unchanged from the integration plan)

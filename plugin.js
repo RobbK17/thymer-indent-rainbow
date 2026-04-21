@@ -347,22 +347,13 @@ body.ir-enabled [data-theme="dark"] .bt-bullets .bt-bullet:hover {
     border-color: rgba(200, 200, 200, 0.75);
 }
 
+/* When carets are off, parents stay filled but read slightly softer than leaves. */
 body.ir-enabled.bt-bullets:not(.bt-toggles) .listitem.bt-has-children > .line-div > .bt-bullet {
-    background: transparent;
-    border: 1.5px solid rgba(128, 128, 128, 0.65);
-    width: 8px;
-    height: 8px;
-    opacity: 0.75;
+    opacity: 0.3;
 }
 
 body.ir-enabled.bt-bullets:not(.bt-toggles) .listitem.bt-has-children > .line-div > .bt-bullet:hover {
-    border-color: rgba(128, 128, 128, 0.95);
-}
-
-@media (prefers-color-scheme: dark) {
-    body.ir-enabled.bt-bullets:not(.bt-toggles) .listitem.bt-has-children > .line-div > .bt-bullet {
-        border-color: rgba(180, 180, 180, 0.55);
-    }
+    opacity: 0.95;
 }
 
 body.ir-enabled.bt-toggles .listitem.bt-has-children > .line-div::before {
